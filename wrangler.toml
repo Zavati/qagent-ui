@@ -44,3 +44,7 @@ max_retries = 20
 
 [triggers]
 crons = ["* * * * *"]
+
+[[routes]]
+pattern = "apiqagent.com/*"
+zone_name = "apiqagent.com"
