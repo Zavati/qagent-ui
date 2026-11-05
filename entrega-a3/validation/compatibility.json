@@ -1,0 +1,10 @@
+{
+  "existingSourceFilesChanged": [
+    "src/index.ts"
+  ],
+  "existingMigrationChanges": [],
+  "dependencyLockChanges": [],
+  "pluginModified": false,
+  "gatewayModified": false,
+  "method": "byte/hash comparison of supplied Observation 0.1.6 and delivery; no remote checkout certification"
+}

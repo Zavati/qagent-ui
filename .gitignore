@@ -1,0 +1,12 @@
+node_modules/
+.wrangler/
+.dev.vars*
+.env*
+!.dev.vars.example
+.export/
+dist/
+*.log
+
+.qagent-ui-ops.json
+.qagent-a3-backups/
+.qagent-a3-check.json

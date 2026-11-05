@@ -1,0 +1,372 @@
+{
+  "contractVersion": "qagent.ui-bundle-assembly.v1",
+  "canonicalizerVersion": "qagent.ui-canonical-json.v1",
+  "builderVersion": "qagent_ui_bundle_builder_v1",
+  "buildId": "uib_427d3723f796091ced239d18459f6f7585e9400073cb2e5093e5e29112024dee",
+  "journeyId": "uj_67e63b053002c5509a3c2767aa62439ea8cfe7dd7834c2ce24adde77a8c0e5cc",
+  "journeyVersionId": "ujv_427d3723f796091ced239d18459f6f7585e9400073cb2e5093e5e29112024dee",
+  "bundleId": "urb_67e63b053002c5509a3c2767aa62439ea8cfe7dd7834c2ce24adde77a8c0e5cc",
+  "bundleVersionId": "urbv_427d3723f796091ced239d18459f6f7585e9400073cb2e5093e5e29112024dee",
+  "source": {
+    "contractVersion": "qagent.ui-bundle-source-ref.v1",
+    "exporterVersion": "qagent_ui_source_v1",
+    "scope": {
+      "organizationId": "org_synthetic",
+      "projectId": "prj_synthetic",
+      "environmentId": "env_synthetic"
+    },
+    "captureId": "uic_synthetic_control",
+    "sourceRevision": "48833e097efc78a89e97946b6780f7996702f432dd6abd24c4ab832e6604b216",
+    "sourceHash": "7544a218adf8ed99d5fde19b666de8e8b2bb90f2e27b7d79f607becc4f1744c2"
+  },
+  "profile": {
+    "contractVersion": "qagent.ui-assembly-profile.v1",
+    "revision": 1,
+    "bootstrap": {
+      "mode": "NONE",
+      "authProfileRef": null
+    }
+  },
+  "manifestState": "SEALED",
+  "journey": {
+    "contractVersion": "qagent.ui-journey.v1",
+    "canonicalizerVersion": "qagent.ui-canonical-json.v1",
+    "journeyId": "uj_67e63b053002c5509a3c2767aa62439ea8cfe7dd7834c2ce24adde77a8c0e5cc",
+    "journeyVersionId": "ujv_427d3723f796091ced239d18459f6f7585e9400073cb2e5093e5e29112024dee",
+    "scope": {
+      "organizationId": "org_synthetic",
+      "projectId": "prj_synthetic",
+      "environmentId": "env_synthetic"
+    },
+    "captureId": "uic_synthetic_control",
+    "dataOrigin": "SYNTHETIC_CONTROL",
+    "title": "Jornada uic_synthetic_control",
+    "objective": "Reproduzir as ações observadas no escopo declarado; nenhuma execução foi realizada nesta montagem.",
+    "entryUrl": "https://app.example.test/items",
+    "sourceBuildRef": "build_synthetic_reference",
+    "renderProfileRef": "uia_semantic",
+    "actions": [
+      {
+        "contractVersion": "qagent.ui-action.v1",
+        "actionId": "act_nav",
+        "stepId": "step_nav",
+        "sequence": 0,
+        "documentId": "doc_synthetic",
+        "navigationId": "nav_synthetic",
+        "relativeTimeMs": 0,
+        "type": "NAVIGATE",
+        "destination": "https://app.example.test/items"
+      },
+      {
+        "contractVersion": "qagent.ui-action.v1",
+        "actionId": "act_fill",
+        "stepId": "step_fill",
+        "sequence": 1,
+        "documentId": "doc_synthetic",
+        "navigationId": "nav_synthetic",
+        "relativeTimeMs": 100,
+        "type": "FILL",
+        "target": {
+          "primaryLocator": {
+            "strategy": "CSS",
+            "value": "#query"
+          },
+          "candidateLocators": [
+            {
+              "strategy": "CSS",
+              "value": "#query"
+            }
+          ],
+          "observedMatchCount": 1,
+          "framePath": []
+        },
+        "input": {
+          "source": "SYNTHETIC_CONTROL",
+          "valueRef": "uia_value"
+        }
+      },
+      {
+        "contractVersion": "qagent.ui-action.v1",
+        "actionId": "act_click",
+        "stepId": "step_click",
+        "sequence": 2,
+        "documentId": "doc_synthetic",
+        "navigationId": "nav_synthetic",
+        "relativeTimeMs": 200,
+        "type": "CLICK",
+        "target": {
+          "primaryLocator": {
+            "strategy": "CSS",
+            "value": "#search"
+          },
+          "candidateLocators": [
+            {
+              "strategy": "CSS",
+              "value": "#query"
+            }
+          ],
+          "observedMatchCount": 1,
+          "framePath": []
+        }
+      }
+    ],
+    "checkpoints": [
+      {
+        "contractVersion": "qagent.ui-checkpoint.v1",
+        "checkpointId": "check_list",
+        "stepId": "step_click",
+        "sequence": 4,
+        "documentId": "doc_synthetic",
+        "navigationId": "nav_synthetic",
+        "relativeTimeMs": 500,
+        "stability": {
+          "kind": "DOM_QUIET",
+          "durationMs": 500
+        },
+        "functionalRef": "uia_semantic",
+        "semanticRef": "uia_semantic",
+        "screenshotRef": null,
+        "modalities": {
+          "functional": "AVAILABLE",
+          "semantic": "AVAILABLE",
+          "visual": "UNAVAILABLE"
+        },
+        "issues": []
+      }
+    ],
+    "issues": [],
+    "manifestHash": "021a73f8fe778cd57f25a44adab2d2df1fa3ffc6cd411e4e7dbde705a63b9887"
+  },
+  "bundle": {
+    "contractVersion": "qagent.ui-replay-bundle.v1",
+    "canonicalizerVersion": "qagent.ui-canonical-json.v1",
+    "bundleId": "urb_67e63b053002c5509a3c2767aa62439ea8cfe7dd7834c2ce24adde77a8c0e5cc",
+    "bundleVersionId": "urbv_427d3723f796091ced239d18459f6f7585e9400073cb2e5093e5e29112024dee",
+    "journeyVersionId": "ujv_427d3723f796091ced239d18459f6f7585e9400073cb2e5093e5e29112024dee",
+    "scope": {
+      "organizationId": "org_synthetic",
+      "projectId": "prj_synthetic",
+      "environmentId": "env_synthetic"
+    },
+    "captureId": "uic_synthetic_control",
+    "dataOrigin": "SYNTHETIC_CONTROL",
+    "sourceBuildRef": "build_synthetic_reference",
+    "captureCompleteness": "COMPLETE_FOR_DECLARED_SCOPE",
+    "declaredScope": {
+      "profile": "CSR_REST_JSON_SINGLE_TAB",
+      "businessOrigins": [
+        "https://app.example.test"
+      ],
+      "limitations": []
+    },
+    "bootstrap": {
+      "mode": "NONE",
+      "authProfileRef": null
+    },
+    "matchPolicyVersion": "qagent_ui_exact_request_v1",
+    "interactions": [
+      {
+        "contractVersion": "qagent.ui-interaction.v1",
+        "entryId": "entry_list",
+        "requestId": "request_list",
+        "stepId": "step_click",
+        "documentId": "doc_synthetic",
+        "navigationId": "nav_synthetic",
+        "relativeTimeMs": 250,
+        "logicalServiceKey": "main",
+        "request": {
+          "method": "GET",
+          "origin": "https://app.example.test",
+          "path": "/api/items",
+          "query": [
+            [
+              "q",
+              "sample query"
+            ]
+          ],
+          "bodyRef": null,
+          "businessHeadersRef": "uia_headers"
+        },
+        "response": {
+          "status": 200,
+          "bodyRef": "uia_body",
+          "headersRef": "uia_headers",
+          "bodyHash": "9508042b6fd62fa2568207424076ca58e3612cb7f1dc56b3b08d3c1516f64656",
+          "completeness": "COMPLETE"
+        },
+        "consumption": {
+          "required": true,
+          "minimum": 1,
+          "maximum": 1
+        },
+        "correlationBasis": "NAVIGATION_AND_STEP_WINDOW",
+        "issues": []
+      }
+    ],
+    "checkpointRefs": [
+      "check_list"
+    ],
+    "artifacts": [
+      {
+        "artifactId": "uia_body",
+        "sha256": "9508042b6fd62fa2568207424076ca58e3612cb7f1dc56b3b08d3c1516f64656",
+        "byteLength": 40,
+        "contentType": "application/json",
+        "privacyPolicyVersion": "qagent.ui-json-sanitized.v1",
+        "completeness": "COMPLETE",
+        "dataOrigin": "SYNTHETIC_CONTROL"
+      },
+      {
+        "artifactId": "uia_headers",
+        "sha256": "0949a58837e00ae2e2ba7a20c5a97cae937e5853bee9562865dce21831f0a7be",
+        "byteLength": 37,
+        "contentType": "application/json",
+        "privacyPolicyVersion": "qagent.ui-json-sanitized.v1",
+        "completeness": "COMPLETE",
+        "dataOrigin": "SYNTHETIC_CONTROL"
+      },
+      {
+        "artifactId": "uia_semantic",
+        "sha256": "f52504f0fef19eb862458560d5ccc1ae368a609a6cc222e07dd1e9adbb4fe0fc",
+        "byteLength": 317,
+        "contentType": "application/json",
+        "privacyPolicyVersion": "qagent.ui-json-sanitized.v1",
+        "completeness": "COMPLETE",
+        "dataOrigin": "SYNTHETIC_CONTROL"
+      },
+      {
+        "artifactId": "uia_value",
+        "sha256": "b86b66423d35b58cb65e53007713722824c0dff14858444cbf95f9ba75379e13",
+        "byteLength": 24,
+        "contentType": "application/json",
+        "privacyPolicyVersion": "qagent.ui-json-sanitized.v1",
+        "completeness": "COMPLETE",
+        "dataOrigin": "SYNTHETIC_CONTROL"
+      }
+    ],
+    "issues": [],
+    "manifestHash": "4a63feb35332b2bb6e5f8ab330a7deb0938d692f578e3080e5241dffeaa9e2e6"
+  },
+  "diagnostic": null,
+  "matching": {
+    "version": "qagent_ui_exact_request_v1",
+    "queryPairs": "PRESERVE_ORDER_AND_DUPLICATES",
+    "requestBody": "EXACT_STORED_BYTES_SHA256",
+    "businessHeaders": "EXACT_STORED_BYTES_SHA256",
+    "context": "DOCUMENT_NAVIGATION_STEP",
+    "globalArrivalOrder": "NOT_A_MATCH_RULE",
+    "liveBusinessFallback": false,
+    "entries": [
+      {
+        "entryId": "entry_list",
+        "requestFingerprint": "60f0a60ef31a791ce1b4a765692aa4e5a5eb0f44f2eff8ebdac7e304c4d3d98e",
+        "documentId": "doc_synthetic",
+        "navigationId": "nav_synthetic",
+        "stepId": "step_click",
+        "consumption": {
+          "required": true,
+          "minimum": 1,
+          "maximum": 1
+        },
+        "correlationBasis": "NAVIGATION_AND_STEP_WINDOW"
+      }
+    ]
+  },
+  "applicationResources": {
+    "strategy": "EXECUTE_TARGET_BUILD",
+    "observedCssJsAreFixtures": false
+  },
+  "renderProfiles": [
+    {
+      "artifactId": "uia_semantic",
+      "viewport": {
+        "width": 1280,
+        "height": 720,
+        "deviceScaleFactor": 1,
+        "scrollX": 0,
+        "scrollY": 0
+      },
+      "renderProfile": {
+        "locale": "en-US",
+        "timezoneId": "UTC",
+        "colorScheme": "light",
+        "userAgent": "synthetic-control"
+      },
+      "textPolicy": "SYNTHETIC_CONTROL"
+    }
+  ],
+  "qualification": {
+    "overall": "READY",
+    "requiredDimensions": [
+      "integrity",
+      "actions",
+      "network",
+      "bootstrap",
+      "provenance",
+      "semantic"
+    ],
+    "dimensions": {
+      "integrity": {
+        "status": "READY",
+        "reasonCodes": []
+      },
+      "actions": {
+        "status": "READY",
+        "reasonCodes": []
+      },
+      "network": {
+        "status": "READY",
+        "reasonCodes": []
+      },
+      "bootstrap": {
+        "status": "READY",
+        "reasonCodes": []
+      },
+      "provenance": {
+        "status": "READY",
+        "reasonCodes": []
+      },
+      "semantic": {
+        "status": "READY",
+        "reasonCodes": []
+      },
+      "visual": {
+        "status": "UNAVAILABLE",
+        "reasonCodes": [
+          "UI_VISUAL_CHECKPOINT_UNAVAILABLE"
+        ]
+      }
+    },
+    "issues": [
+      {
+        "code": "UI_VISUAL_CHECKPOINT_UNAVAILABLE",
+        "dimensions": [
+          "visual"
+        ],
+        "severity": "BLOCKER",
+        "refs": [
+          "check_list"
+        ]
+      }
+    ],
+    "eligibleModes": [
+      "FUNCTIONAL",
+      "SEMANTIC"
+    ],
+    "coverage": {
+      "documentOccurrences": 1,
+      "documentOccurrencesWithCheckpoint": 1
+    },
+    "counts": {
+      "actions": 3,
+      "interactions": 1,
+      "checkpoints": 1,
+      "referencedArtifacts": 4,
+      "verifiedArtifacts": 4
+    },
+    "meaning": "QUALIFIED_FOR_REPLAY_ATTEMPT_NOT_EXECUTED",
+    "uiTestPassed": false,
+    "apiEvidencePromoted": false
+  },
+  "manifestHash": "ac267e8ecfe5f0ac7496df8258283d65c0bfed8e0b39a4ed8e743b6f8e3438c1"
+}

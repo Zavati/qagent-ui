@@ -1,0 +1,46 @@
+name = "qagent-ui"
+main = "src/index.ts"
+compatibility_date = "2026-08-12"
+workers_dev = true
+
+[vars]
+UI_BUNDLE_BUILD_ENABLED = "true"
+UI_BUNDLE_QUEUE_NAME = "qagent-ui-bundle-build-dev"
+UI_BUNDLE_DLQ_NAME = "qagent-ui-bundle-build-dlq-dev"
+
+# Set this id with tools/configure.mjs after creating the NEW UI DB.
+[[d1_databases]]
+binding = "UI_DB"
+database_name = "qagent-ui-dev"
+database_id = "877d4b28-e145-4e1a-b6bb-c754c5c7eae7"
+migrations_dir = "migrations"
+
+[[r2_buckets]]
+binding = "qagent_ui_bundles_dev"
+bucket_name = "qagent-ui-bundles-dev"
+
+[[services]]
+binding = "OBSERVATION_SERVICE"
+service = "qagent-observation"
+
+[[queues.producers]]
+binding = "qagent_ui_bundle_build_dev"
+queue = "qagent-ui-bundle-build-dev"
+
+[[queues.consumers]]
+queue = "qagent-ui-bundle-build-dev"
+max_batch_size = 1
+max_batch_timeout = 1
+max_concurrency = 2
+max_retries = 5
+dead_letter_queue = "qagent-ui-bundle-build-dlq-dev"
+
+[[queues.consumers]]
+queue = "qagent-ui-bundle-build-dlq-dev"
+max_batch_size = 5
+max_batch_timeout = 1
+max_concurrency = 1
+max_retries = 20
+
+[triggers]
+crons = ["* * * * *"]

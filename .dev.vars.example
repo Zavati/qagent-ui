@@ -1,0 +1,4 @@
+# Local synthetic development only. Use wrangler secret put for remote deployment.
+# Never commit real values. SOURCE is shared only between Observation and qagent-ui.
+UI_BUNDLE_SOURCE_SECRET=REPLACE_WITH_AT_LEAST_32_RANDOM_CHARACTERS
+UI_BUNDLE_OPERATOR_SECRET=REPLACE_WITH_A_DIFFERENT_RANDOM_SECRET

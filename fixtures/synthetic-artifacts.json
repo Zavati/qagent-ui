@@ -1,0 +1,43 @@
+{
+  "uia_value": {
+    "value": "sample query"
+  },
+  "uia_headers": [
+    [
+      "content-type",
+      "application/json"
+    ]
+  ],
+  "uia_body": {
+    "data": [
+      {
+        "id": 1,
+        "name": "Sample item"
+      }
+    ]
+  },
+  "uia_semantic": {
+    "version": "qagent.ui-semantic.v1",
+    "viewport": {
+      "width": 1280,
+      "height": 720,
+      "deviceScaleFactor": 1,
+      "scrollX": 0,
+      "scrollY": 0
+    },
+    "renderProfile": {
+      "locale": "en-US",
+      "timezoneId": "UTC",
+      "colorScheme": "light",
+      "userAgent": "synthetic-control"
+    },
+    "elements": [
+      {
+        "tag": "h1",
+        "text": "Items",
+        "visible": true
+      }
+    ],
+    "textPolicy": "SYNTHETIC_CONTROL"
+  }
+}

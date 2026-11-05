@@ -1,0 +1,267 @@
+{
+  "contractVersion": "qagent.ui-bundle-source.v1",
+  "exporterVersion": "qagent_ui_source_v1",
+  "scope": {
+    "organizationId": "org_synthetic",
+    "projectId": "prj_synthetic",
+    "environmentId": "env_synthetic"
+  },
+  "captureId": "uic_synthetic_control",
+  "sourceRevision": "48833e097efc78a89e97946b6780f7996702f432dd6abd24c4ab832e6604b216",
+  "capture": {
+    "descriptor": {
+      "contractVersion": "qagent.ui-capture.v1",
+      "operationId": "op_uic_synthetic_control",
+      "dataOrigin": "SYNTHETIC_CONTROL",
+      "documentId": "doc_synthetic",
+      "entryUrl": "https://app.example.test/items",
+      "sourceBuildRef": "build_synthetic_reference",
+      "issues": []
+    },
+    "completion": {
+      "contractVersion": "qagent.ui-capture.v1",
+      "operationId": "op_seal_uic_synthetic_control",
+      "outcome": "RECORDED",
+      "issues": []
+    },
+    "status": "RECORDED",
+    "createdAt": 1700000000000,
+    "completedAt": 1700000010000,
+    "origins": [
+      "https://app.example.test"
+    ]
+  },
+  "ingestion": {
+    "expectedEvents": 5,
+    "lastSequence": 4,
+    "eventChainHash": "90849e98a3bb23394c8d188119f6ae0a0ad6a02279944b4fc8969af63d16a030"
+  },
+  "events": [
+    {
+      "eventId": "uie_0",
+      "sequence": 0,
+      "kind": "ACTION",
+      "payload": {
+        "contractVersion": "qagent.ui-action.v1",
+        "actionId": "act_nav",
+        "stepId": "step_nav",
+        "sequence": 0,
+        "documentId": "doc_synthetic",
+        "navigationId": "nav_synthetic",
+        "relativeTimeMs": 0,
+        "type": "NAVIGATE",
+        "destination": "https://app.example.test/items"
+      },
+      "contentHash": "a7465876c9711dc25892d59791047557a888bab5b3cd867ddfd12f644091da89"
+    },
+    {
+      "eventId": "uie_1",
+      "sequence": 1,
+      "kind": "ACTION",
+      "payload": {
+        "contractVersion": "qagent.ui-action.v1",
+        "actionId": "act_fill",
+        "stepId": "step_fill",
+        "sequence": 1,
+        "documentId": "doc_synthetic",
+        "navigationId": "nav_synthetic",
+        "relativeTimeMs": 100,
+        "type": "FILL",
+        "target": {
+          "primaryLocator": {
+            "strategy": "CSS",
+            "value": "#query"
+          },
+          "candidateLocators": [
+            {
+              "strategy": "CSS",
+              "value": "#query"
+            }
+          ],
+          "observedMatchCount": 1,
+          "framePath": []
+        },
+        "input": {
+          "source": "SYNTHETIC_CONTROL",
+          "valueRef": "uia_value"
+        }
+      },
+      "contentHash": "b0f4276ed150ae9018fc592e0f0964f44da7f3c253094a5151713adff1ce05fe"
+    },
+    {
+      "eventId": "uie_2",
+      "sequence": 2,
+      "kind": "ACTION",
+      "payload": {
+        "contractVersion": "qagent.ui-action.v1",
+        "actionId": "act_click",
+        "stepId": "step_click",
+        "sequence": 2,
+        "documentId": "doc_synthetic",
+        "navigationId": "nav_synthetic",
+        "relativeTimeMs": 200,
+        "type": "CLICK",
+        "target": {
+          "primaryLocator": {
+            "strategy": "CSS",
+            "value": "#search"
+          },
+          "candidateLocators": [
+            {
+              "strategy": "CSS",
+              "value": "#query"
+            }
+          ],
+          "observedMatchCount": 1,
+          "framePath": []
+        }
+      },
+      "contentHash": "7a52acbd315e6de69dfdc7a6c1f5156330a1fca6e7d8d500e9a081b6e4fa4be2"
+    },
+    {
+      "eventId": "uie_3",
+      "sequence": 3,
+      "kind": "INTERACTION",
+      "payload": {
+        "contractVersion": "qagent.ui-interaction.v1",
+        "entryId": "entry_list",
+        "requestId": "request_list",
+        "stepId": "step_click",
+        "documentId": "doc_synthetic",
+        "navigationId": "nav_synthetic",
+        "relativeTimeMs": 250,
+        "logicalServiceKey": "main",
+        "request": {
+          "method": "GET",
+          "origin": "https://app.example.test",
+          "path": "/api/items",
+          "query": [
+            [
+              "q",
+              "sample query"
+            ]
+          ],
+          "bodyRef": null,
+          "businessHeadersRef": "uia_headers"
+        },
+        "response": {
+          "status": 200,
+          "bodyRef": "uia_body",
+          "headersRef": "uia_headers",
+          "bodyHash": "9508042b6fd62fa2568207424076ca58e3612cb7f1dc56b3b08d3c1516f64656",
+          "completeness": "COMPLETE"
+        },
+        "consumption": {
+          "required": true,
+          "minimum": 1,
+          "maximum": 1
+        },
+        "correlationBasis": "NAVIGATION_AND_STEP_WINDOW",
+        "issues": []
+      },
+      "contentHash": "fa100b98e6a10ed14be96dc33f3b2d3ac5fd87aa44c49bd2a1ee56df0f438843"
+    },
+    {
+      "eventId": "uie_4",
+      "sequence": 4,
+      "kind": "CHECKPOINT",
+      "payload": {
+        "contractVersion": "qagent.ui-checkpoint.v1",
+        "checkpointId": "check_list",
+        "stepId": "step_click",
+        "sequence": 4,
+        "documentId": "doc_synthetic",
+        "navigationId": "nav_synthetic",
+        "relativeTimeMs": 500,
+        "stability": {
+          "kind": "DOM_QUIET",
+          "durationMs": 500
+        },
+        "functionalRef": "uia_semantic",
+        "semanticRef": "uia_semantic",
+        "screenshotRef": null,
+        "modalities": {
+          "functional": "AVAILABLE",
+          "semantic": "AVAILABLE",
+          "visual": "UNAVAILABLE"
+        },
+        "issues": []
+      },
+      "contentHash": "ba0e8f537ca4c1159e856feec609ed7ebe8e47c967b15731d1c034f796762393"
+    }
+  ],
+  "artifacts": [
+    {
+      "artifactId": "uia_value",
+      "descriptor": {
+        "contractVersion": "qagent.ui-artifact.v1",
+        "operationId": "op_uia_value",
+        "kind": "ACTION_VALUE_JSON",
+        "contentType": "application/json",
+        "byteLength": 24,
+        "sha256": "b86b66423d35b58cb65e53007713722824c0dff14858444cbf95f9ba75379e13",
+        "privacy": {
+          "policyVersion": "qagent.ui-json-sanitized.v1",
+          "representation": "SANITIZED_JSON",
+          "dataOrigin": "SYNTHETIC_CONTROL",
+          "transformations": []
+        }
+      },
+      "status": "FINALIZED"
+    },
+    {
+      "artifactId": "uia_headers",
+      "descriptor": {
+        "contractVersion": "qagent.ui-artifact.v1",
+        "operationId": "op_uia_headers",
+        "kind": "HEADERS_JSON",
+        "contentType": "application/json",
+        "byteLength": 37,
+        "sha256": "0949a58837e00ae2e2ba7a20c5a97cae937e5853bee9562865dce21831f0a7be",
+        "privacy": {
+          "policyVersion": "qagent.ui-json-sanitized.v1",
+          "representation": "SANITIZED_JSON",
+          "dataOrigin": "SYNTHETIC_CONTROL",
+          "transformations": []
+        }
+      },
+      "status": "FINALIZED"
+    },
+    {
+      "artifactId": "uia_body",
+      "descriptor": {
+        "contractVersion": "qagent.ui-artifact.v1",
+        "operationId": "op_uia_body",
+        "kind": "RESPONSE_JSON",
+        "contentType": "application/json",
+        "byteLength": 40,
+        "sha256": "9508042b6fd62fa2568207424076ca58e3612cb7f1dc56b3b08d3c1516f64656",
+        "privacy": {
+          "policyVersion": "qagent.ui-json-sanitized.v1",
+          "representation": "SANITIZED_JSON",
+          "dataOrigin": "SYNTHETIC_CONTROL",
+          "transformations": []
+        }
+      },
+      "status": "FINALIZED"
+    },
+    {
+      "artifactId": "uia_semantic",
+      "descriptor": {
+        "contractVersion": "qagent.ui-artifact.v1",
+        "operationId": "op_uia_semantic",
+        "kind": "SEMANTIC_JSON",
+        "contentType": "application/json",
+        "byteLength": 317,
+        "sha256": "f52504f0fef19eb862458560d5ccc1ae368a609a6cc222e07dd1e9adbb4fe0fc",
+        "privacy": {
+          "policyVersion": "qagent.ui-json-sanitized.v1",
+          "representation": "SANITIZED_JSON",
+          "dataOrigin": "SYNTHETIC_CONTROL",
+          "transformations": []
+        }
+      },
+      "status": "FINALIZED"
+    }
+  ]
+}

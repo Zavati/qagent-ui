@@ -1,0 +1,254 @@
+{
+  "files": [
+    {
+      "path": ".dev.vars.example",
+      "sha256": "f95354995f870f9fe993d58a7d90293c24338e6b5775345315f4a764c2183a4b",
+      "bytes": 300
+    },
+    {
+      "path": ".gitignore",
+      "sha256": "b9a59f6d1114e0812f7bbb1c39e749f0b8b2b89c06a11ac0a63dc8906d3bfe6c",
+      "bytes": 145
+    },
+    {
+      "path": "README.md",
+      "sha256": "37a52c968964fe6ae75e04b25e2af3f6e344a49a911bca844f1cfab59385611e",
+      "bytes": 3359
+    },
+    {
+      "path": "docs/ARCHITECTURE.md",
+      "sha256": "84f33a5b09fc059484381e9e17ee226b7fbcb01a38737ca08d308129560ff86a",
+      "bytes": 6823
+    },
+    {
+      "path": "docs/CONTRACTS.md",
+      "sha256": "6892ec956e4b703ad154a9ef511562b67f78044d26a9ca7b0278b0d4b81c68f3",
+      "bytes": 2720
+    },
+    {
+      "path": "entrega-a3/COMANDOS-E-DEPLOY.md",
+      "sha256": "0ae229f92eb980b6c6351cf271d1df2c9a7df7c550b0ad468623f9a1bec9f060",
+      "bytes": 13525
+    },
+    {
+      "path": "entrega-a3/INTEGRATION-CHECKPOINT.md",
+      "sha256": "102f4f80bbf62071fd34f73821cdd91f7dc48d3c29506046dba74dc1c8ed5b9e",
+      "bytes": 1296
+    },
+    {
+      "path": "entrega-a3/INTEGRATION-REGISTER.json",
+      "sha256": "e99eeee1bbc1d1658ae3fec09ebe0a80ffb9ec6ce7b9e13c19304c85142cc077",
+      "bytes": 961
+    },
+    {
+      "path": "entrega-a3/SOURCES.md",
+      "sha256": "2591fbdfaea53ba8fe020d3a66e6196f5de8f27d7ac7c6bbd1a5e52f7a5ddc55",
+      "bytes": 1347
+    },
+    {
+      "path": "entrega-a3/VALIDACAO.md",
+      "sha256": "a0f02ce61c895d04d3173eac3d03b968913b513c35970497c596a9a46b5321a1",
+      "bytes": 6037
+    },
+    {
+      "path": "entrega-a3/validation/baseline-ui-async.log",
+      "sha256": "37e19e1a974cada75d2d7e6f4b52621b2c4c06e1faca20d39497ebc64f61c599",
+      "bytes": 9499
+    },
+    {
+      "path": "entrega-a3/validation/compatibility.json",
+      "sha256": "37057fc9536cdd5fe8757f656918641e082af19c25a76cb6015e9a9267f28859",
+      "bytes": 294
+    },
+    {
+      "path": "entrega-a3/validation/demo.log",
+      "sha256": "cafdd9e2563342d08c1ef26c081c6094a74b980110e96fa3e5f7925a310bb6e2",
+      "bytes": 361
+    },
+    {
+      "path": "entrega-a3/validation/installer-release.log",
+      "sha256": "005af410de5b333242772783530edc369699d93c8d384b9f3fd40c62d081a8c7",
+      "bytes": 661
+    },
+    {
+      "path": "entrega-a3/validation/integration-release.log",
+      "sha256": "0420ab3e2f5c27599c0e83e35fafad44ca1df7708229a8c69cc36e4b9f76ac18",
+      "bytes": 10275
+    },
+    {
+      "path": "entrega-a3/validation/npm-connectivity.log",
+      "sha256": "4cb711117a26a1663697dcbceeabccad720f08d6502445e114f3a4d28ff787f6",
+      "bytes": 361
+    },
+    {
+      "path": "entrega-a3/validation/observation-async-release.log",
+      "sha256": "ad2547dd8073b1562d7a9299be14fd390eeda90c72e52f1b92c63c5b29d4eeb3",
+      "bytes": 9427
+    },
+    {
+      "path": "entrega-a3/validation/official-check-observation.log",
+      "sha256": "ab8cbf702b841d5d44b951282735e0f4c7ec5c32106f1af0f422659ae0680f72",
+      "bytes": 278
+    },
+    {
+      "path": "entrega-a3/validation/official-check-ui.log",
+      "sha256": "f68e5a1ab5eff0d5f0b76ce26119c76f0bb1ef83f0c0b30f9981890e06aac0a6",
+      "bytes": 210
+    },
+    {
+      "path": "entrega-a3/validation/source-native-release.log",
+      "sha256": "96d817e57ec4df1c4c9bcfc7e3aab5574b3b3e01eb2755aee16579ff1fd73dbb",
+      "bytes": 7767
+    },
+    {
+      "path": "entrega-a3/validation/ui-native-release.log",
+      "sha256": "8a516deaa631ab97e372b55d967408f1fb649599bf3f7b2e5c48df65b4b0713b",
+      "bytes": 17428
+    },
+    {
+      "path": "fixtures/README.md",
+      "sha256": "623d79c15f7927891c1a73c10b643005fdd8476fa7fbe18a22ca55e720853e75",
+      "bytes": 402
+    },
+    {
+      "path": "fixtures/synthetic-artifacts.json",
+      "sha256": "332f176dd9ca3765cd6afbfbcb9db7e3477682a3f48144d97a8c1f32567cbd95",
+      "bytes": 741
+    },
+    {
+      "path": "fixtures/synthetic-assembly.json",
+      "sha256": "497acb146dbc8a71a707b805cf464b33bfd5838296adabc79dd43f640ca60431",
+      "bytes": 11317
+    },
+    {
+      "path": "fixtures/synthetic-source.json",
+      "sha256": "345e263480da10596c77e9ed6a2f59c02bd189fdca4f91ef1dce51033b734976",
+      "bytes": 7974
+    },
+    {
+      "path": "migrations/0001_ui_bundles.sql",
+      "sha256": "d6b91a3284011a5af8ea8abb8c6ab180280fe6607ef5bca3075ba7fc32b975de",
+      "bytes": 3009
+    },
+    {
+      "path": "package-lock.json",
+      "sha256": "f6080be048d76092406adcc4b33819b810cafe69a82863006ab645bf89673d60",
+      "bytes": 101433
+    },
+    {
+      "path": "package.json",
+      "sha256": "dbc2df04fad8a7844178e3538da54643caedacc27e94f2c34c1b0636c1d4ef94",
+      "bytes": 837
+    },
+    {
+      "path": "src/contracts/canonical.ts",
+      "sha256": "a57e704e630b4a36830db89b06f9eb1bfe34dfb20b27ff015ade11097ae3656e",
+      "bytes": 8130
+    },
+    {
+      "path": "src/contracts/uiCapture.ts",
+      "sha256": "a6c2ebdb6eda035b89843c80087fa49eb56f88c755a7522fffebd870291a4f2f",
+      "bytes": 25123
+    },
+    {
+      "path": "src/env.ts",
+      "sha256": "0220083a2c51ecee93a73d2cffd71d6e1e9196972eb74a3263e012d7bb4cdc72",
+      "bytes": 334
+    },
+    {
+      "path": "src/index.ts",
+      "sha256": "4094fac13b64135c682990cfb9e3299135de709c68d491e2f6812a29b1447692",
+      "bytes": 5538
+    },
+    {
+      "path": "src/protocol.ts",
+      "sha256": "9c7bd5e8c3a6fd34bf1c5a6f7aeacd1588d5845bcf782a6d9ca51df862f5c70b",
+      "bytes": 13607
+    },
+    {
+      "path": "src/services/assembler.ts",
+      "sha256": "477f343212565fb3877527313aac655e2085dbae82b8037f2326ec3ec78134fb",
+      "bytes": 15047
+    },
+    {
+      "path": "src/services/buildService.ts",
+      "sha256": "934861ebca57686bf4ad8127130f8ffb90333e374d7b49029e735a3dc255c780",
+      "bytes": 9165
+    },
+    {
+      "path": "src/services/sourceClient.ts",
+      "sha256": "674ef81925d361ccb7399151ee979ba37981723cf31e75076c329739f9963f75",
+      "bytes": 2132
+    },
+    {
+      "path": "src/storage/repository.ts",
+      "sha256": "13ee96a4d8380a92373636b2e9cc56bc9a51a7b668af863c1712b957b9d847f6",
+      "bytes": 8793
+    },
+    {
+      "path": "tests/integration.node.cjs",
+      "sha256": "3a25829b6ba162e95a7b9932a4e4c52aa6d198f2800753e24d09c0d2be4f1b4f",
+      "bytes": 8656
+    },
+    {
+      "path": "tests/support.cjs",
+      "sha256": "7d88dc15714c938a1370805379404a097b2cec3b1d43b6723473e1404dc8af50",
+      "bytes": 13313
+    },
+    {
+      "path": "tests/unit.node.cjs",
+      "sha256": "895c6c3596d02e72d6d98628a4354a80efea57d6ed7432f182b16cbfb247da6c",
+      "bytes": 19519
+    },
+    {
+      "path": "tools/compile-ui-test-sources.mjs",
+      "sha256": "00f10f148cbbb168212b121c1732eba4b2177dae0bb25eda307d0267111e9115",
+      "bytes": 1795
+    },
+    {
+      "path": "tools/configure.mjs",
+      "sha256": "3bf35de28aaf6cfd66b7f376c6d57e2f15cb82c95814e6e6140360c4450af298",
+      "bytes": 1141
+    },
+    {
+      "path": "tools/demo.mjs",
+      "sha256": "2bdfc547a62941c7dbb7add4cb7d8dcc89d5a5ec0b6e0c454136b0a597da01ab",
+      "bytes": 1533
+    },
+    {
+      "path": "tools/test-bundles.mjs",
+      "sha256": "4af4c55d946dbe59e08753e0120c53cf2beb3a4acf719d7a29b5e328a100f623",
+      "bytes": 709
+    },
+    {
+      "path": "tools/test-integration.mjs",
+      "sha256": "9bc38755756d9796a1231c55fc445d207b5c421ed769f3baa45770a38bec4ed4",
+      "bytes": 1165
+    },
+    {
+      "path": "tools/ui-ops.mjs",
+      "sha256": "49955246dd2e0c598765a8b8a97d514b7e563503819a130bfdc9d64eacee5477",
+      "bytes": 6803
+    },
+    {
+      "path": "tsconfig.json",
+      "sha256": "08dcfeea205e1b2e4b20465f5a1ec2166eb4ef625b79f4fa0639fc56f6447284",
+      "bytes": 442
+    },
+    {
+      "path": "ui-ops.example.json",
+      "sha256": "f94974947b5449e05436f7921e48a95d501acb64c5216cd6030f9494fff2c60f",
+      "bytes": 247
+    },
+    {
+      "path": "worker-configuration.d.ts",
+      "sha256": "0749b27eeff5ade647b45de6b2720828b8929437bbd087849ec1f2bd235cc447",
+      "bytes": 573773
+    },
+    {
+      "path": "wrangler.toml",
+      "sha256": "952c8f9572cfde728e08204e4fd3eee3f24c0966ca34883ea8a29b6ac0e2bc85",
+      "bytes": 1072
+    }
+  ]
+}
