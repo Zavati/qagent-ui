@@ -46,5 +46,5 @@ max_retries = 20
 crons = ["* * * * *"]
 
 [[routes]]
-pattern = "apiqagent.com/qagent-ui/*"
+pattern = "apiqagent.com/v1/qagent-ui/*"
 zone_name = "apiqagent.com"
