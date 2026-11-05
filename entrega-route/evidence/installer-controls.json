@@ -1,0 +1,13 @@
+{
+  "passed": 8,
+  "controls": [
+    "preflight read-only",
+    "apply changes only the six manifest paths",
+    "D1, routes, queues, vars and local CLI config preserved",
+    "reapply is idempotent",
+    "guarded rollback restores original bytes",
+    "source conflict blocks all writes",
+    "CRLF accepted without ignoring content changes",
+    "rollback blocks later local change"
+  ]
+}

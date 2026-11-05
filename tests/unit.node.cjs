@@ -58,3 +58,91 @@ test('DLQ cannot fail a job with an active fenced lease',async t=>{const {d,f}=a
 
 test('operator CLI HMAC interoperates with the production HTTP verifier',async()=>{const {buildRequest}=await import(require('node:url').pathToFileURL(path.join(root,'tools/ui-ops.mjs')));const cfg={baseUrl:'https://ui.test',scope:{organizationId:'org_synthetic',projectId:'prj_synthetic',environmentId:'env_synthetic'}},r=buildRequest('list',{},cfg,OPS);assert.equal(JSON.stringify(await p.protocol.authenticate(new Request(r.url,r.init),OPS,'operator')),JSON.stringify({scope:cfg.scope}));});
 test('operator CLI rejects remote plaintext, redirects in base URL and credential config',async()=>{const cli=await import(require('node:url').pathToFileURL(path.join(root,'tools/ui-ops.mjs')));for(const baseUrl of ['http://ui.test','https://u:secret@ui.test','https://ui.test/?token=x'])assert.throws(()=>cli.buildRequest('health',{}, {baseUrl},null));assert.throws(()=>cli.buildRequest('revoke',{bundle:'urbv_example'}, {baseUrl:'https://ui.test',scope:{organizationId:'org_test',projectId:'prj_test',environmentId:'env_test'}},OPS),/confirm-revoke/);});
+
+// 0.1.1: exact public mount; the signed request's wire path must not be rewritten.
+const publicMount='/v1/qagent-ui/';
+async function publicOps(f,op,body,secret=OPS,principal='operator'){
+ const req=await p.protocol.signedRequest('https://api.example.test'+publicMount+op,body,secret,principal);
+ return f.routes.default.fetch(req,f.env);
+}
+async function cliModule(){return import(require('node:url').pathToFileURL(path.join(root,'tools/ui-ops.mjs')));}
+
+test('public prefix health responds without DB, Queue, R2 or operator credentials',async t=>{
+ const {f}=await fixture(t);const r=await f.routes.default.fetch(new Request('https://api.example.test/v1/qagent-ui/health'),{});
+ assert.equal(r.status,200);assert.deepEqual(await r.json(),{status:'ok',service:'qagent-ui',version:'0.1.1',stage:'08.2-A.3'});
+});
+test('public prefix never exposes source capabilities or unknown paths',async t=>{
+ const {f}=await fixture(t);
+ for(const suffix of ['capabilities','unknown','health/','/health']){
+  const r=await f.routes.default.fetch(new Request('https://api.example.test'+publicMount+suffix),f.env);assert.equal(r.status,404,suffix);
+ }
+ for(const pathname of ['/v1/qagent-uix/health','/v1/qagent-ui-extra/health','/v1/observation/health','/v1/plugin/health']){
+  assert.equal((await f.routes.default.fetch(new Request('https://api.example.test'+pathname),f.env)).status,404,pathname);
+ }
+});
+test('every mounted operator endpoint still rejects unsigned POST',async t=>{
+ const {f}=await fixture(t);
+ for(const op of ['list','build','read','artifact','inspect','revoke','build-status']){
+  const r=await f.routes.default.fetch(new Request('https://api.example.test'+publicMount+op,{method:'POST',body:'{}'}),f.env);assert.equal(r.status,401,op);
+ }
+});
+test('mounted data endpoints reject GET and the source principal',async t=>{
+ const {f,d}=await fixture(t);
+ assert.equal((await f.routes.default.fetch(new Request('https://api.example.test'+publicMount+'list'),f.env)).status,401);
+ assert.equal((await publicOps(f,'list',{scope:d.ref.scope},SECRET,'source')).status,401);
+});
+test('internal source capability route still accepts its original signed request',async t=>{
+ const {f}=await fixture(t);const req=await p.protocol.signedRequest('https://qagent.internal'+p.protocol.UI_PREFIX+'capabilities',{},SECRET,'source');
+ const r=await f.routes.default.fetch(req,f.env);assert.equal(r.status,200);assert.equal((await r.json()).ready,true);
+});
+test('CLI chooses exact public health and operator paths with or without trailing slash',async()=>{
+ const cli=await cliModule();const scope={organizationId:'org_test',projectId:'prj_test',environmentId:'env_test'};
+ for(const baseUrl of ['https://api.example.test/v1/qagent-ui','https://api.example.test/v1/qagent-ui/']){
+  const health=cli.buildRequest('health',{}, {baseUrl},null);assert.equal(health.url,'https://api.example.test/v1/qagent-ui/health');assert.equal(health.init.redirect,'error');
+  const list=cli.buildRequest('list',{}, {baseUrl,scope},OPS);assert.equal(list.url,'https://api.example.test/v1/qagent-ui/list');assert.equal(list.init.redirect,'error');
+  assert.equal(JSON.stringify(await p.protocol.authenticate(new Request(list.url,list.init),OPS,'operator')),JSON.stringify({scope}));
+ }
+});
+test('CLI preserves legacy root URLs and Service Binding path signatures',async()=>{
+ const cli=await cliModule();const cfg={baseUrl:'https://ui.example.test/',scope:{organizationId:'org_test',projectId:'prj_test',environmentId:'env_test'}};
+ assert.equal(cli.buildRequest('health',{},cfg,null).url,'https://ui.example.test/health');
+ const req=cli.buildRequest('list',{},cfg,OPS);assert.equal(req.url,'https://ui.example.test/internal/ui/v1/list');
+ assert.equal(JSON.stringify(await p.protocol.authenticate(new Request(req.url,req.init),OPS,'operator')),JSON.stringify({scope:cfg.scope}));
+});
+test('CLI rejects invalid public bases rather than silently dropping their path',async()=>{
+ const cli=await cliModule();
+ for(const baseUrl of ['http://api.example.test/v1/qagent-ui','https://u:secret@api.example.test/v1/qagent-ui','https://api.example.test/v1/qagent-ui?key=x','https://api.example.test/v1/qagent-ui#fragment','https://api.example.test/v1/qagent-ui-other','https://api.example.test/v1/qagent-ui/health','https://api.example.test/v1/qagent-ui//','https://api.example.test/arbitrary']){
+  assert.throws(()=>cli.buildRequest('health',{}, {baseUrl},null),undefined,baseUrl);
+ }
+ assert.equal(cli.buildRequest('health',{}, {baseUrl:'http://127.0.0.1:8787/v1/qagent-ui'},null).url,'http://127.0.0.1:8787/v1/qagent-ui/health');
+});
+test('HMAC binds full public path: rewriting to internal path fails authentication',async t=>{
+ const {f,d}=await fixture(t);const signed=await p.protocol.signedRequest('https://api.example.test'+publicMount+'list',{scope:d.ref.scope},OPS,'operator');
+ const bad=new Request('https://api.example.test'+p.protocol.UI_PREFIX+'list',{method:'POST',headers:signed.headers,body:await signed.text()});
+ assert.equal((await f.routes.default.fetch(bad,f.env)).status,401);
+});
+test('HMAC from internal path cannot be replayed on public mount',async t=>{
+ const {f,d}=await fixture(t);const signed=await p.protocol.signedRequest('https://api.example.test'+p.protocol.UI_PREFIX+'list',{scope:d.ref.scope},OPS,'operator');
+ const bad=new Request('https://api.example.test'+publicMount+'list',{method:'POST',headers:signed.headers,body:await signed.text()});
+ assert.equal((await f.routes.default.fetch(bad,f.env)).status,401);
+});
+test('public operator workflow: build, status, list, read, inspect, artifact and revoke',async t=>{
+ const {f,d}=await fixture(t);const cli=await cliModule();const cfg={baseUrl:'https://api.example.test/v1/qagent-ui',scope:d.ref.scope};
+ async function call(op,options={}){const r=cli.buildRequest(op,options,cfg,OPS);return f.routes.default.fetch(new Request(r.url,r.init),f.env);}
+ const initial=await call('build',{capture:d.ref.captureId,bootstrap:'none'});assert.equal(initial.status,202);
+ const requested=await initial.json();assert.equal(f.queue.messages.length,1);
+ assert.equal((await consumeOne(f,f.queue.messages[0].body)).acked,true);
+ const status=await call('build-status',{build:requested.buildId});assert.equal(status.status,200);assert.equal((await status.json()).status,'COMPLETE');
+ assert.equal((await call('list',{capture:d.ref.captureId})).status,200);
+ const bundle=(await p.protocol.identity(d.ref,d.profile)).bundleVersionId;
+ const read=await call('read',{bundle});assert.equal(read.status,200);await p.canonical.verifyManifestHash(await read.json());
+ const inspect=await call('inspect',{bundle});assert.equal(inspect.status,200);assert.equal((await inspect.json()).dependenciesAvailable,true);
+ const artifact=await call('artifact',{bundle,artifact:'uia_body'});assert.equal(artifact.status,200);assert.equal(await artifact.text(),d.bytes.get('uia_body').toString());
+ assert.equal((await call('revoke',{bundle,'confirm-revoke':true})).status,200);assert.equal((await call('read',{bundle})).status,410);
+});
+test('public operator scope mismatch and unrelated artifacts stay blocked',async t=>{
+ const {f,d}=await fixture(t);await consumeOne(f,await p.protocol.makeMessage(d.ref,d.profile,SECRET));
+ const bundleVersionId=(await p.protocol.identity(d.ref,d.profile)).bundleVersionId;
+ assert.equal((await publicOps(f,'read',{scope:{...d.ref.scope,organizationId:'org_other'},bundleVersionId})).status,404);
+ assert.equal((await publicOps(f,'artifact',{scope:d.ref.scope,bundleVersionId,artifactId:'uia_unrelated'})).status,403);
+});

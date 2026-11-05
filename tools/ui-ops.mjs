@@ -5,6 +5,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import {pathToFileURL} from 'node:url';
 const PREFIX='/internal/ui/v1/';
+const PUBLIC_PREFIX='/v1/qagent-ui/';
 const OPS=new Set(['health','list','build','read','artifact','inspect','revoke','build-status']);
 const KEYS=new Set(['base-url','config','organization','project','environment','capture','bundle','artifact','build','out','revision','bootstrap','auth-profile','cursor','limit','force','confirm-revoke']);
 const ID=/^[a-z][a-z0-9_]{1,31}_[A-Za-z0-9][A-Za-z0-9_-]{1,179}$/;
@@ -13,15 +14,17 @@ function identifier(value,name){const x=required(value,name);if(!ID.test(x))thro
 export function parseArgs(args){const command=args.shift();if(!OPS.has(command))throw Error('Uso: node tools/ui-ops.mjs health|list|build|read|artifact|inspect|revoke|build-status [--config .qagent-ui-ops.json] [opcoes]');const options={};while(args.length){const key=args.shift();if(!key.startsWith('--')||!KEYS.has(key.slice(2)))throw Error(`Opcao desconhecida: ${key}`);const k=key.slice(2);if(Object.hasOwn(options,k))throw Error(`Opcao duplicada: ${k}`);options[k]=['force','confirm-revoke'].includes(k)?true:required(args.shift(),k);}return {command,options};}
 export function configuration(options){let cfg={};const file=options.config??'.qagent-ui-ops.json';if(fs.existsSync(file)){const st=fs.statSync(file);if(st.size>16384)throw Error('Arquivo de configuracao muito grande');cfg=JSON.parse(fs.readFileSync(file,'utf8'));if(!cfg||Array.isArray(cfg)||typeof cfg!=='object')throw Error('Configuracao invalida');for(const k of Object.keys(cfg))if(!['baseUrl','organizationId','projectId','environmentId'].includes(k))throw Error(`Campo nao permitido na configuracao: ${k}. Nunca grave secrets neste arquivo.`);}else if(options.config)throw Error('Arquivo --config inexistente');return {baseUrl:options['base-url']??cfg.baseUrl,scope:{organizationId:options.organization??cfg.organizationId,projectId:options.project??cfg.projectId,environmentId:options.environment??cfg.environmentId}};}
 export function buildRequest(command,options,cfg,secret,now=Date.now()){
- const base=new URL(required(cfg.baseUrl,'base-url'));if(base.username||base.password||base.search||base.hash||base.pathname!=='/'||!(base.protocol==='https:'||(base.protocol==='http:'&&['localhost','127.0.0.1','[::1]'].includes(base.hostname))))throw Error('base-url deve ser uma origem HTTPS (HTTP somente localhost)');
- if(command==='health')return {url:base.origin+'/health',init:{method:'GET',redirect:'error'}};
+ const base=new URL(required(cfg.baseUrl,'base-url'));
+ const mounted=base.pathname===PUBLIC_PREFIX || base.pathname===PUBLIC_PREFIX.slice(0,-1);
+ if(base.username||base.password||base.search||base.hash||(!mounted && base.pathname!=='/')||!(base.protocol==='https:'||(base.protocol==='http:'&&['localhost','127.0.0.1','[::1]'].includes(base.hostname))))throw Error('base-url deve ser uma origem HTTPS ou terminar em /v1/qagent-ui (HTTP somente localhost)');
+ if(command==='health')return {url:base.origin+(mounted?PUBLIC_PREFIX:'/')+'health',init:{method:'GET',redirect:'error'}};
  if(typeof secret!=='string'||secret.length<32||secret.length>512)throw Error('Defina QAGENT_UI_OPERATOR_SECRET com o secret de operador (32-512 caracteres)');
  const scope={organizationId:identifier(cfg.scope.organizationId,'organization'),projectId:identifier(cfg.scope.projectId,'project'),environmentId:identifier(cfg.scope.environmentId,'environment')};let body={scope};
  if(command==='build') {body.captureId=identifier(options.capture,'capture');const revision=Number(options.revision??1);if(!Number.isSafeInteger(revision)||revision<1||revision>1000000)throw Error('revision invalida');const modes={none:'NONE',unavailable:'UNAVAILABLE',controlled:'CONTROLLED_SESSION'},mode=modes[options.bootstrap??'unavailable'];if(!mode)throw Error('bootstrap: unavailable, none ou controlled');if(mode!=='CONTROLLED_SESSION'&&options['auth-profile'])throw Error('auth-profile requer bootstrap controlled');body.profile={contractVersion:'qagent.ui-assembly-profile.v1',revision,bootstrap:{mode,authProfileRef:mode==='CONTROLLED_SESSION'?identifier(options['auth-profile'],'auth-profile'):null}};}
  else if(command==='list') {if(options.capture)body.captureId=identifier(options.capture,'capture');if(options.cursor)body.cursor=identifier(options.cursor,'cursor');if(options.limit){body.limit=Number(options.limit);if(!Number.isSafeInteger(body.limit)||body.limit<1||body.limit>50)throw Error('limit deve ser 1-50');}}
  else if(command==='build-status')body.buildId=identifier(options.build,'build');
  else {body.bundleVersionId=identifier(options.bundle,'bundle');if(command==='artifact')body.artifactId=identifier(options.artifact,'artifact');if(command==='revoke'&&!options['confirm-revoke'])throw Error('Revogacao exige --confirm-revoke; nao apaga artefatos');}
- const text=JSON.stringify(body),time=String(Math.floor(now/1000)),pathname=PREFIX+command;
+ const text=JSON.stringify(body),time=String(Math.floor(now/1000)),pathname=(mounted?PUBLIC_PREFIX:PREFIX)+command;
  const digest=crypto.createHash('sha256').update(text).digest('hex');const signature=crypto.createHmac('sha256',secret).update(`QAGENT_UI_BUNDLE_HTTP_V1\noperator\nPOST\n${pathname}\n${time}\n${digest}`).digest('hex');
  return {url:base.origin+pathname,init:{method:'POST',redirect:'error',headers:{'Content-Type':'application/json','X-QAgent-Bundle-Principal':'operator','X-QAgent-Bundle-Time':time,'X-QAgent-Bundle-Signature':signature},body:text}};
 }

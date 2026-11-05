@@ -7,12 +7,17 @@ import { Repository } from './storage/repository';
 import { consumeBuilds,recoverBuilds,requestBuild,readEnvelope } from './services/buildService';
 import { SourceClient } from './services/sourceClient';
 
+// Public operator mount; internal Service Binding routes remain unchanged.
+// Authenticate the ORIGINAL request URL so the signature binds the actual wire path.
+const PUBLIC_PREFIX = '/v1/qagent-ui/';
+
 export async function route(request:Request,env:UiBundleEnv):Promise<Response> {
     const path=new URL(request.url).pathname;
-    if(path==='/health' && request.method==='GET')return json({status:'ok',service:'qagent-ui',version:'0.1.0',stage:'08.2-A.3'});
-    if(!path.startsWith(UI_PREFIX))return json({status:'error',code:'UI_BUNDLE_ROUTE_NOT_FOUND'},404);
-    const op=path.slice(UI_PREFIX.length),repo=new Repository(env.UI_DB);
-    if(op==='capabilities') {
+    if((path==='/health' || path===PUBLIC_PREFIX+'health') && request.method==='GET')return json({status:'ok',service:'qagent-ui',version:'0.1.1',stage:'08.2-A.3'});
+    const isPublic=path.startsWith(PUBLIC_PREFIX);
+    if(!isPublic && !path.startsWith(UI_PREFIX))return json({status:'error',code:'UI_BUNDLE_ROUTE_NOT_FOUND'},404);
+    const op=path.slice((isPublic?PUBLIC_PREFIX:UI_PREFIX).length),repo=new Repository(env.UI_DB);
+    if(op==='capabilities' && !isPublic) {
         await authenticate(request,env.UI_BUNDLE_SOURCE_SECRET,'source');await repo.ready();await env.UI_BUNDLES.head('_qagent_ui_bundle/readiness');
         return json({status:'ok',sourceVersion:SOURCE_VERSION,buildRequestVersion:BUILD_REQUEST_VERSION,assemblyVersion:ASSEMBLY_VERSION,builderVersion:BUILDER_VERSION,
             ready:env.UI_BUNDLE_BUILD_ENABLED!=='false'&&!!env.OBSERVATION_SERVICE&&!!env.UI_BUNDLE_BUILD_QUEUE,executionSupported:false});

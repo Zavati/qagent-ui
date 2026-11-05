@@ -12,11 +12,11 @@ UI_BUNDLE_DLQ_NAME = "qagent-ui-bundle-build-dlq-dev"
 [[d1_databases]]
 binding = "UI_DB"
 database_name = "qagent-ui-dev"
-database_id = "877d4b28-e145-4e1a-b6bb-c754c5c7eae7"
+database_id = "00000000-0000-0000-0000-000000000000"
 migrations_dir = "migrations"
 
 [[r2_buckets]]
-binding = "qagent_ui_bundles_dev"
+binding = "UI_BUNDLES"
 bucket_name = "qagent-ui-bundles-dev"
 
 [[services]]
@@ -24,7 +24,7 @@ binding = "OBSERVATION_SERVICE"
 service = "qagent-observation"
 
 [[queues.producers]]
-binding = "qagent_ui_bundle_build_dev"
+binding = "UI_BUNDLE_BUILD_QUEUE"
 queue = "qagent-ui-bundle-build-dev"
 
 [[queues.consumers]]
@@ -44,7 +44,3 @@ max_retries = 20
 
 [triggers]
 crons = ["* * * * *"]
-
-[[routes]]
-pattern = "apiqagent.com/v1/qagent-ui/*"
-zone_name = "apiqagent.com"
