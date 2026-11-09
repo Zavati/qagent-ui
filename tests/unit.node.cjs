@@ -69,7 +69,7 @@ async function cliModule(){return import(require('node:url').pathToFileURL(path.
 
 test('public prefix health responds without DB, Queue, R2 or operator credentials',async t=>{
  const {f}=await fixture(t);const r=await f.routes.default.fetch(new Request('https://api.example.test/v1/qagent-ui/health'),{});
- assert.equal(r.status,200);assert.deepEqual(await r.json(),{status:'ok',service:'qagent-ui',version:'0.1.2',stage:'08.2-A.3'});
+ assert.equal(r.status,200);assert.deepEqual(await r.json(),{status:'ok',service:'qagent-ui',version:'0.1.3',stage:'08.2-A.3'});
 });
 test('public prefix never exposes source capabilities or unknown paths',async t=>{
  const {f}=await fixture(t);
@@ -148,7 +148,7 @@ test('public operator scope mismatch and unrelated artifacts stay blocked',async
 });
 
 
-test('0.1.2 retry diagnostics expose safe failing stage without payload or secret',async t=>{
+test('0.1.3 retry diagnostics expose safe failing stage without payload or secret',async t=>{
  const {d,f}=await fixture(t),m=await p.protocol.makeMessage(d.ref,d.profile,SECRET),logs=[],orig=console.info;
  f.env.OBSERVATION_SERVICE={fetch:async()=>{throw Error('synthetic transport failure with private details');}};
  console.info=(...args)=>logs.push(args.join(' '));
@@ -160,4 +160,9 @@ test('0.1.2 retry diagnostics expose safe failing stage without payload or secre
  assert.equal(failed.stage,'source.snapshot');assert.equal(failed.code,'UI_BUNDLE_SERVICE_UNAVAILABLE');
  assert.equal(logs.join('\n').includes('synthetic transport failure with private details'),false);
  assert.equal(logs.join('\n').includes(SECRET),false);
+});
+
+test('internal signed requests use redirect manual because Workers rejects redirect error',async()=>{
+ const req=await p.protocol.signedRequest('https://qagent.internal'+p.protocol.SOURCE_PREFIX+'status',{},SECRET,'source');
+ assert.equal(req.redirect,'manual');
 });

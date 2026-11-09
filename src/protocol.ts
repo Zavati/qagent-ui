@@ -134,7 +134,7 @@ export async function signedRequest(url:string,body:unknown,secret:string|undefi
     if(bytes.length>INTERNAL_MAX_BYTES) fail('UI_BUNDLE_CONTROL_TOO_LARGE',413);
     const time=String(Math.floor(now/1000)),path=new URL(url).pathname;
     const signature=await sign(secret,`QAGENT_UI_BUNDLE_HTTP_V1\n${principal}\nPOST\n${path}\n${time}\n${await sha256(bytes)}`);
-    return new Request(url,{method:'POST',headers:{'Content-Type':'application/json','X-QAgent-Bundle-Principal':principal,'X-QAgent-Bundle-Time':time,'X-QAgent-Bundle-Signature':signature},body:bytes.slice().buffer,redirect:'error'});
+    return new Request(url,{method:'POST',headers:{'Content-Type':'application/json','X-QAgent-Bundle-Principal':principal,'X-QAgent-Bundle-Time':time,'X-QAgent-Bundle-Signature':signature},body:bytes.slice().buffer,redirect:'manual'});
 }
 export async function authenticate(request:Request,secret:string|undefined,principal:'source'|'operator',now=Date.now()):Promise<unknown> {
     if(request.method!=='POST' || new URL(request.url).search || request.headers.get('X-QAgent-Bundle-Principal')!==principal) fail('UI_BUNDLE_AUTH_INVALID',401);
