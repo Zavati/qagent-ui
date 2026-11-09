@@ -69,7 +69,7 @@ async function cliModule(){return import(require('node:url').pathToFileURL(path.
 
 test('public prefix health responds without DB, Queue, R2 or operator credentials',async t=>{
  const {f}=await fixture(t);const r=await f.routes.default.fetch(new Request('https://api.example.test/v1/qagent-ui/health'),{});
- assert.equal(r.status,200);assert.deepEqual(await r.json(),{status:'ok',service:'qagent-ui',version:'0.1.1',stage:'08.2-A.3'});
+ assert.equal(r.status,200);assert.deepEqual(await r.json(),{status:'ok',service:'qagent-ui',version:'0.1.2',stage:'08.2-A.3'});
 });
 test('public prefix never exposes source capabilities or unknown paths',async t=>{
  const {f}=await fixture(t);
@@ -145,4 +145,19 @@ test('public operator scope mismatch and unrelated artifacts stay blocked',async
  const bundleVersionId=(await p.protocol.identity(d.ref,d.profile)).bundleVersionId;
  assert.equal((await publicOps(f,'read',{scope:{...d.ref.scope,organizationId:'org_other'},bundleVersionId})).status,404);
  assert.equal((await publicOps(f,'artifact',{scope:d.ref.scope,bundleVersionId,artifactId:'uia_unrelated'})).status,403);
+});
+
+
+test('0.1.2 retry diagnostics expose safe failing stage without payload or secret',async t=>{
+ const {d,f}=await fixture(t),m=await p.protocol.makeMessage(d.ref,d.profile,SECRET),logs=[],orig=console.info;
+ f.env.OBSERVATION_SERVICE={fetch:async()=>{throw Error('synthetic transport failure with private details');}};
+ console.info=(...args)=>logs.push(args.join(' '));
+ try {const msg=delivery(m);await f.services.consumeBuilds({queue:p.protocol.MAIN_QUEUE,messages:[msg]},f.env);assert.equal(msg.retried,true);}
+ finally {console.info=orig;}
+ const retry=logs.map(x=>{try{return JSON.parse(x)}catch{return null}}).find(x=>x?.event==='build.retry');
+ const failed=logs.map(x=>{try{return JSON.parse(x)}catch{return null}}).find(x=>x?.event==='build.stage_failed');
+ assert.equal(retry.stage,'source.snapshot');assert.equal(retry.code,'UI_BUNDLE_SERVICE_UNAVAILABLE');
+ assert.equal(failed.stage,'source.snapshot');assert.equal(failed.code,'UI_BUNDLE_SERVICE_UNAVAILABLE');
+ assert.equal(logs.join('\n').includes('synthetic transport failure with private details'),false);
+ assert.equal(logs.join('\n').includes(SECRET),false);
 });

@@ -1,3 +1,5 @@
+# qagent-ui 0.1.2
+
 # qagent-ui 0.1.0 — 08.2-A.3
 
 Serviço independente de montagem, qualificação e persistência de Replay Bundles.

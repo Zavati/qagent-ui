@@ -13,7 +13,7 @@ const PUBLIC_PREFIX = '/v1/qagent-ui/';
 
 export async function route(request:Request,env:UiBundleEnv):Promise<Response> {
     const path=new URL(request.url).pathname;
-    if((path==='/health' || path===PUBLIC_PREFIX+'health') && request.method==='GET')return json({status:'ok',service:'qagent-ui',version:'0.1.1',stage:'08.2-A.3'});
+    if((path==='/health' || path===PUBLIC_PREFIX+'health') && request.method==='GET')return json({status:'ok',service:'qagent-ui',version:'0.1.2',stage:'08.2-A.3'});
     const isPublic=path.startsWith(PUBLIC_PREFIX);
     if(!isPublic && !path.startsWith(UI_PREFIX))return json({status:'error',code:'UI_BUNDLE_ROUTE_NOT_FOUND'},404);
     const op=path.slice((isPublic?PUBLIC_PREFIX:UI_PREFIX).length),repo=new Repository(env.UI_DB);
