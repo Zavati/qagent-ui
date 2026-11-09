@@ -12,7 +12,7 @@ UI_BUNDLE_DLQ_NAME = "qagent-ui-bundle-build-dlq-dev"
 [[d1_databases]]
 binding = "UI_DB"
 database_name = "qagent-ui-dev"
-database_id = "00000000-0000-0000-0000-000000000000"
+database_id = "877d4b28-e145-4e1a-b6bb-c754c5c7eae7"
 migrations_dir = "migrations"
 
 [[r2_buckets]]
