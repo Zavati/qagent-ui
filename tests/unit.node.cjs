@@ -1,4 +1,4 @@
-const test=require('node:test');const assert=require('node:assert/strict');const path=require('node:path');
+const test=require('node:test');const assert=require('node:assert/strict');const path=require('node:path');const crypto=require('node:crypto');
 const {production,sample,uiEnvironment,delivery,SECRET,OPS}=require('./support.cjs');
 const build=process.env.QAGENT_UI_BUILD,root=process.env.QAGENT_UI_ROOT,p=production(build);
 const {assemble}=require(path.join(build,'src/services/assembler.js'));
@@ -69,7 +69,7 @@ async function cliModule(){return import(require('node:url').pathToFileURL(path.
 
 test('public prefix health responds without DB, Queue, R2 or operator credentials',async t=>{
  const {f}=await fixture(t);const r=await f.routes.default.fetch(new Request('https://api.example.test/v1/qagent-ui/health'),{});
- assert.equal(r.status,200);assert.deepEqual(await r.json(),{status:'ok',service:'qagent-ui',version:'0.1.3',stage:'08.2-A.3'});
+ assert.equal(r.status,200);assert.deepEqual(await r.json(),{status:'ok',service:'qagent-ui',version:'0.1.4',stage:'08.2-A.3'});
 });
 test('public prefix never exposes source capabilities or unknown paths',async t=>{
  const {f}=await fixture(t);
@@ -165,4 +165,22 @@ test('0.1.3 retry diagnostics expose safe failing stage without payload or secre
 test('internal signed requests use redirect manual because Workers rejects redirect error',async()=>{
  const req=await p.protocol.signedRequest('https://qagent.internal'+p.protocol.SOURCE_PREFIX+'status',{},SECRET,'source');
  assert.equal(req.redirect,'manual');
+});
+
+test('builder v2 identity is a new immutable assembly identity',async()=>{
+ const d=await sample(p);const ids=await p.protocol.identity(d.ref,d.profile);
+ assert.equal(p.protocol.BUILDER_VERSION,'qagent_ui_bundle_builder_v2');
+ assert.ok(ids.buildId.startsWith('uib_'));assert.ok(ids.bundleVersionId.startsWith('urbv_'));
+});
+
+
+test('delayed builder v1 queue message is acknowledged as superseded without retry or bundle mutation',async t=>{
+ const {d,f}=await fixture(t);const ids=await p.protocol.identityForBuilder(d.ref,d.profile,p.protocol.LEGACY_BUILDER_VERSION);
+ const unsigned={contractVersion:p.protocol.BUILD_REQUEST_VERSION,source:d.ref,profile:d.profile,buildId:ids.buildId};
+ const signature=crypto.createHmac('sha256',SECRET).update('QAGENT_UI_BUNDLE_QUEUE_V1\n'+p.canonical.canonicalJson(unsigned)).digest('hex');
+ const legacy={...unsigned,signature};await p.protocol.validateMessage(legacy,SECRET);await new Repository(f.env.UI_DB).admit(legacy);
+ const msg=await consumeOne(f,legacy);assert.equal(msg.acked,true);assert.equal(msg.retried,false);
+ const row=f.db.sql.prepare('SELECT status,last_error FROM ui_bundle_builds WHERE build_id=?').get(ids.buildId);
+ assert.equal(row.status,'FAILED');assert.equal(row.last_error,'UI_BUNDLE_BUILD_SUPERSEDED');
+ assert.equal(f.db.sql.prepare('SELECT COUNT(*) n FROM ui_bundle_versions').get().n,0);
 });

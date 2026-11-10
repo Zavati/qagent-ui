@@ -19,7 +19,7 @@ test('retention pin blocks deletion in Observation after asynchronous commit',as
 test('a lost source acknowledgement retries after local commit without duplicating manifest',async t=>{const {obs,ui}=await fixture(t);await obs.service.recoverBundleExports(obs.env);const source=ui.env.OBSERVATION_SERVICE;let once=true;ui.env.OBSERVATION_SERVICE={fetch:async req=>{const r=await source.fetch(req);if(once&&new URL(req.url).pathname.endsWith('/ack')){once=false;throw Error('lost ACK');}return r;}};const m=obs.queue.messages[0].body;assert.equal((await consume(ui,m)).retried,true);assert.equal(ui.db.sql.prepare('SELECT COUNT(*) n FROM ui_bundle_versions').get().n,1);assert.equal((await consume(ui,m)).acked,true);assert.equal(ui.db.sql.prepare('SELECT COUNT(*) n FROM ui_bundle_versions').get().n,1);});
 test('shared protocol and original contract implementations are equivalent across repos',()=>{const a=fs.readFileSync(path.join(oroot,'src/ui/bundles/protocol.ts'),'utf8').replaceAll("from '../contracts/","from './contracts/");assert.equal(a,fs.readFileSync(path.join(uroot,'src/protocol.ts'),'utf8'));for(const name of ['canonical.ts','uiCapture.ts'])assert.equal(fs.readFileSync(path.join(oroot,'src/ui/contracts',name),'utf8'),fs.readFileSync(path.join(uroot,'src/contracts',name),'utf8'));});
 test('end-to-end with REAL A.2 admission/reconciliation modules, not only seeded closed rows',async t=>{
- const old=require(path.join(oroot,'test-ui-async/support.cjs'));const f=old.fixture();t.after(()=>f.close());f.db.sql.exec(fs.readFileSync(path.join(oroot,'migrations/0015_ui_bundle_exports.sql'),'utf8'));
+ const old=require(path.join(oroot,'test-ui-async/support.cjs'));const f=old.fixture();t.after(()=>f.close());f.db.sql.exec(fs.readFileSync(path.join(oroot,'migrations/0015_ui_bundle_exports.sql'),'utf8'));f.db.sql.exec(fs.readFileSync(path.join(oroot,'migrations/0016_ui_bundle_build_attempts.sql'),'utf8'));
  const p=uiEnvironment;const control=await sample(require('./support.cjs').production(ub));const ui=uiEnvironment(ub,uroot,control);t.after(()=>ui.close());
  const s=await old.start(f),mapped={};
  for(const item of control.snapshot.artifacts){const descriptor=item.descriptor;const admit=await old.call(f,`/v1/ui/captures/${s.id}/artifacts`,s.token,descriptor);assert.equal(admit.status,200);const aid=admit.body.artifact.artifactId;mapped[item.artifactId]=aid;
@@ -36,4 +36,23 @@ test('end-to-end with REAL A.2 admission/reconciliation modules, not only seeded
  ui.env.OBSERVATION_SERVICE={fetch:req=>source.routeBundleSource(req,f.env)};
  await source.recoverBundleExports(f.env);assert.equal(downstream.messages.length,1);const msg=await consume(ui,downstream.messages[0].body);assert.equal(msg.acked,true);
  assert.equal(ui.db.sql.prepare('SELECT COUNT(*) n FROM ui_bundle_versions').get().n,1);assert.equal(f.db.sql.prepare('SELECT phase FROM ui_ingestion_sessions').get().phase,'COMPLETE');
+});
+
+test('historical failed build remains immutable while builder v2 completes a new build for the same capture',async t=>{
+ const {obs,ui,data}=await fixture(t);await obs.service.recoverBundleExports(obs.env);const current=obs.queue.messages[0].body;
+ const oldBuild='uib_'+ 'c'.repeat(64),now=Date.now();
+ ui.db.sql.prepare("INSERT INTO ui_bundle_builds(build_id,organization_id,project_id,environment_id,capture_id,source_hash,request_hash,message_json,status,created_at,updated_at,next_dispatch_at,last_error) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)")
+  .run(oldBuild,data.ref.scope.organizationId,data.ref.scope.projectId,data.ref.scope.environmentId,data.ref.captureId,data.ref.sourceHash,'d'.repeat(64),'{}','FAILED',now,now,now,'UI_BUNDLE_SERVICE_UNAVAILABLE');
+ const msg=await consume(ui,current);assert.equal(msg.acked,true);
+ assert.equal(ui.db.sql.prepare('SELECT status FROM ui_bundle_builds WHERE build_id=?').get(oldBuild).status,'FAILED');
+ assert.equal(ui.db.sql.prepare('SELECT status FROM ui_bundle_builds WHERE build_id=?').get(current.buildId).status,'COMPLETE');
+ assert.equal(ui.db.sql.prepare('SELECT COUNT(*) n FROM ui_bundle_versions').get().n,1);
+});
+
+test('stale old rejection after v2 publish does not poison the active export',async t=>{
+ const {obs,ui}=await fixture(t);await obs.service.recoverBundleExports(obs.env);const current=obs.queue.messages[0].body;
+ const old='uib_'+ 'e'.repeat(64);const req=await ui.p.protocol.signedRequest('https://obs.test'+ui.p.protocol.SOURCE_PREFIX+'ack',{source:current.source,buildId:old,bundleVersionId:null,disposition:'REJECTED'},SECRET,'source');
+ const stale=await obs.service.routeBundleSource(req,obs.env);assert.equal(stale.status,200);assert.equal((await stale.json()).applied,false);
+ assert.equal(obs.db.sql.prepare('SELECT status FROM ui_bundle_export_outbox').get().status,'PUBLISHED');
+ await consume(ui,current);assert.equal(obs.db.sql.prepare('SELECT status FROM ui_bundle_export_outbox').get().status,'DELIVERED');
 });

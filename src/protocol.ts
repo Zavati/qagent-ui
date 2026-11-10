@@ -8,7 +8,8 @@ export const SOURCE_REF_VERSION = 'qagent.ui-bundle-source-ref.v1';
 export const BUILD_REQUEST_VERSION = 'qagent.ui-bundle-build-request.v1';
 export const ASSEMBLY_VERSION = 'qagent.ui-bundle-assembly.v1';
 export const EXPORTER_VERSION = 'qagent_ui_source_v1';
-export const BUILDER_VERSION = 'qagent_ui_bundle_builder_v1';
+export const BUILDER_VERSION = 'qagent_ui_bundle_builder_v2';
+export const LEGACY_BUILDER_VERSION = 'qagent_ui_bundle_builder_v1';
 export const PROFILE_VERSION = 'qagent.ui-assembly-profile.v1';
 export const MATCH_VERSION = 'qagent_ui_exact_request_v1';
 export const MAIN_QUEUE = 'qagent-ui-bundle-build-dev';
@@ -110,10 +111,16 @@ async function sign(secret: string|undefined, data: string): Promise<string> {
 async function verify(secret: string|undefined,data: string, signature: string): Promise<void> {
     if(!/^[a-f0-9]{64}$/.test(signature) || !await crypto.subtle.verify('HMAC',await hmacKey(secret,['verify']),unhex(signature).slice().buffer,new TextEncoder().encode(data))) fail('UI_BUNDLE_AUTH_INVALID',401);
 }
-export async function identity(source: SourceRef,profile: AssemblyProfile): Promise<{buildId:string;journeyId:string;journeyVersionId:string;bundleId:string;bundleVersionId:string}> {
+export async function identityForBuilder(source: SourceRef,profile: AssemblyProfile,builderVersion:string): Promise<{buildId:string;journeyId:string;journeyVersionId:string;bundleId:string;bundleVersionId:string}> {
     const captureKey=await digestJson({scope:source.scope,captureId:source.captureId});
-    const version=await digestJson({source,profile,builderVersion:BUILDER_VERSION,matchPolicyVersion:MATCH_VERSION});
+    const version=await digestJson({source,profile,builderVersion,matchPolicyVersion:MATCH_VERSION});
     return {buildId:'uib_'+version,journeyId:'uj_'+captureKey,journeyVersionId:'ujv_'+version,bundleId:'urb_'+captureKey,bundleVersionId:'urbv_'+version};
+}
+export async function identity(source: SourceRef,profile: AssemblyProfile) { return identityForBuilder(source,profile,BUILDER_VERSION); }
+export async function messageBuilderVersion(message:Pick<BuildMessage,'source'|'profile'|'buildId'>):Promise<string|null> {
+    if(message.buildId===(await identityForBuilder(message.source,message.profile,BUILDER_VERSION)).buildId)return BUILDER_VERSION;
+    if(message.buildId===(await identityForBuilder(message.source,message.profile,LEGACY_BUILDER_VERSION)).buildId)return LEGACY_BUILDER_VERSION;
+    return null;
 }
 export async function makeMessage(source:SourceRef,profile:AssemblyProfile,secret:string|undefined):Promise<BuildMessage> {
     validateSourceRef(source);validateProfile(profile);
@@ -124,7 +131,7 @@ export async function validateMessage(value:unknown,secret:string|undefined):Pro
     const m=object(value,['contractVersion','source','profile','buildId','signature']);
     if(m.contractVersion!==BUILD_REQUEST_VERSION) fail('UI_BUNDLE_MESSAGE_UNSUPPORTED');
     validateSourceRef(m.source);validateProfile(m.profile);id(m.buildId);
-    if(m.buildId!==(await identity(m.source,m.profile)).buildId) fail('UI_BUNDLE_MESSAGE_IDENTITY_MISMATCH',409);
+    if(!(await messageBuilderVersion(m as BuildMessage))) fail('UI_BUNDLE_MESSAGE_IDENTITY_MISMATCH',409);
     const {signature,...unsigned}=m;
     await verify(secret,'QAGENT_UI_BUNDLE_QUEUE_V1\n'+canonicalJson(unsigned),signature);
     return m as BuildMessage;

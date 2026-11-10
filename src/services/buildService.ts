@@ -1,6 +1,6 @@
 import { canonicalJson,digestJson,sha256,decodeJson,verifyManifestHash,UiError,fail } from '../contracts/canonical';
 import { eventArtifactRefs,type Scope } from '../contracts/uiCapture';
-import { MAIN_QUEUE,DLQ,MAX_MANIFEST_BYTES,identity,validateMessage,makeMessage,errorCode,log,type BuildMessage,type AssemblyProfile } from '../protocol';
+import { MAIN_QUEUE,DLQ,MAX_MANIFEST_BYTES,BUILDER_VERSION,identity,messageBuilderVersion,validateMessage,makeMessage,errorCode,log,type BuildMessage,type AssemblyProfile } from '../protocol';
 import type { UiBundleEnv } from '../env';
 import { Repository,type VersionRow } from '../storage/repository';
 import { SourceClient } from './sourceClient';
@@ -77,6 +77,11 @@ export async function consumeBuilds(batch:MessageBatch<unknown>,env:UiBundleEnv)
         let parsed:BuildMessage|null=null;
         try {
             parsed=await validateMessage(message.body,env.UI_BUNDLE_SOURCE_SECRET);
+            if(await messageBuilderVersion(parsed)!==BUILDER_VERSION) {
+                await repo.supersede(parsed.buildId);
+                log('build.superseded',{buildId:parsed.buildId,captureId:parsed.source.captureId});
+                message.ack();continue;
+            }
             if(batch.queue===dlq) {
                 const job=await repo.getBuild(parsed.buildId);
                 if(job?.status==='COMPLETE') {
@@ -114,12 +119,14 @@ export async function requestBuild(env:UiBundleEnv,scope:Scope,captureId:string,
 }
 export async function recoverBuilds(env:UiBundleEnv):Promise<void> {
     if(env.UI_BUNDLE_BUILD_ENABLED==='false')return;
+    const repo=new Repository(env.UI_DB);
     const now=Date.now(),rows=await env.UI_DB.prepare("SELECT * FROM ui_bundle_builds WHERE status IN ('PENDING','BUILDING') AND lease_until<=? AND next_dispatch_at<=? ORDER BY next_dispatch_at LIMIT 10").bind(now,now).all<{build_id:string;message_json:string}>();
     for(const row of rows.results??[]) {
         const claimed=await env.UI_DB.prepare("UPDATE ui_bundle_builds SET next_dispatch_at=? WHERE build_id=? AND next_dispatch_at<=? AND status IN ('PENDING','BUILDING') AND lease_until<=?").bind(now+60000,row.build_id,now,now).run();
         if(!claimed.meta.changes)continue;
         try {
             const message=await validateMessage(JSON.parse(row.message_json),env.UI_BUNDLE_SOURCE_SECRET);
+            if(await messageBuilderVersion(message)!==BUILDER_VERSION) {await repo.supersede(row.build_id);log('build.superseded',{buildId:row.build_id,captureId:message.source.captureId});continue;}
             await env.UI_BUNDLE_BUILD_QUEUE.send(message);
             await env.UI_DB.prepare("UPDATE ui_bundle_builds SET next_dispatch_at=? WHERE build_id=? AND status IN ('PENDING','BUILDING')").bind(Date.now()+900000,row.build_id).run();
             log('build.republished',{buildId:row.build_id});
