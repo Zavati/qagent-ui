@@ -1,0 +1,6 @@
+import fs from 'node:fs';import os from 'node:os';import path from 'node:path';import {fileURLToPath} from 'node:url';import {spawnSync} from 'node:child_process';import {compileForNode} from './compile-ui-test-sources.mjs';
+const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..'),args=process.argv.slice(2);if(args.length&&!(args.length===2&&args[0]==='--observation'))throw Error('Use --observation <checkout> or no arguments for standalone tests.');
+const temp=fs.mkdtempSync(path.join(os.tmpdir(),'qagent-pc2-ui-'));
+try{const ui=compileForNode(root,path.join(temp,'ui'));let test='page-copy.node.cjs',extra={};if(args.length){const observation=path.resolve(args[1]);if(!fs.existsSync(path.join(observation,'test-ui-page-artifacts/support.cjs')))throw Error('Observation PC.2 is required for this integration suite.');const obs=compileForNode(observation,path.join(temp,'observation'));extra={QAGENT_OBSERVATION_ROOT:observation,QAGENT_OBSERVATION_BUILD:obs};test='page-copy-integration.node.cjs';}
+ const r=spawnSync(process.execPath,['--test',path.join(root,'tests',test)],{stdio:'inherit',env:{...process.env,QAGENT_UI_ROOT:root,QAGENT_UI_BUILD:ui,...extra}});process.exitCode=r.status??1;
+}catch(e){console.error(e.message);process.exitCode=1;}finally{fs.rmSync(temp,{recursive:true,force:true});}

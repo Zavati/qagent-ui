@@ -1,3 +1,5 @@
+import { PAGE_SOURCE_REF_VERSION } from '../contracts/pageSource';
+import { assemblePageEvidence } from './pageEvidence';
 import { canonicalJson,digestJson,sha256,decodeJson,verifyManifestHash,UiError,fail } from '../contracts/canonical';
 import { eventArtifactRefs,type Scope } from '../contracts/uiCapture';
 import { MAIN_QUEUE,DLQ,MAX_MANIFEST_BYTES,BUILDER_VERSION,identity,messageBuilderVersion,validateMessage,makeMessage,errorCode,log,type BuildMessage,type AssemblyProfile } from '../protocol';
@@ -8,7 +10,7 @@ import { assemble } from './assembler';
 
 const buildStages = new WeakMap<object,string>();
 function markStage(error:unknown,stage:string):unknown {
-    if(error && (typeof error==='object' || typeof error==='function')) buildStages.set(error as object,stage);
+    if(error && (typeof error==='object' || typeof error==='function')) if(!buildStages.has(error as object))buildStages.set(error as object,stage);
     return error;
 }
 function stageOf(error:unknown):string {
@@ -31,7 +33,7 @@ export async function readEnvelope(env:UiBundleEnv,v:VersionRow,checkSource=true
 async function writeManifest(env:UiBundleEnv,envelope:Record<string,any>):Promise<{key:string;hash:string;bytes:number}> {
     const bytes=new TextEncoder().encode(canonicalJson(envelope));if(bytes.length>MAX_MANIFEST_BYTES)fail('UI_BUNDLE_MANIFEST_TOO_LARGE',413);
     const hash=await sha256(bytes),scopeHash=await digestJson(envelope.source.scope);
-    const key=`ui-bundles/v1/${scopeHash}/${envelope.bundleVersionId}/${hash}.json`;
+    const key=`ui-bundles/${envelope.source.contractVersion===PAGE_SOURCE_REF_VERSION?'v2':'v1'}/${scopeHash}/${envelope.bundleVersionId}/${hash}.json`;
     await env.UI_BUNDLES.put(key,bytes,{onlyIf:{etagDoesNotMatch:'*'},sha256:hash,httpMetadata:{contentType:'application/json'},customMetadata:{sha256:hash,contract:envelope.contractVersion}});
     const after=await env.UI_BUNDLES.get(key);
     if(!after || after.size!==bytes.length || await sha256(new Uint8Array(await after.arrayBuffer()))!==hash)fail('UI_BUNDLE_MANIFEST_INTEGRITY_FAILED',409);
@@ -49,6 +51,19 @@ export async function processBuild(env:UiBundleEnv,m:BuildMessage):Promise<void>
     if(job.status==='FAILED')fail('UI_BUNDLE_BUILD_FAILED',409);
     const token=await atStage('db.lease',()=>repo.lease(m.buildId));if(!token)fail('UI_BUNDLE_BUILD_BUSY',503);
     try {
+        if(m.source.contractVersion===PAGE_SOURCE_REF_VERSION) {
+            const root=await atStage('source.page_root',()=>source.loadPage(m.source)),ids=await atStage('build.identity',()=>identity(m.source,m.profile));
+            await atStage('source.pin',()=>source.pin(m.source,ids.bundleVersionId,root.reachableArtifactIds));
+            let heartbeat=Date.now();
+            const built=await atStage('page.verify',()=>assemblePageEvidence(root,m.source,m.profile,
+                index=>atStage('source.page_part',()=>source.pagePart(m.source,root,index)),
+                async artifactId=>{if(Date.now()-heartbeat>15000){await atStage('db.heartbeat',()=>repo.heartbeat(m.buildId,token));heartbeat=Date.now();}return atStage('source.artifact',()=>source.artifact(m.source,artifactId));}));
+            await atStage('db.heartbeat',()=>repo.heartbeat(m.buildId,token));
+            const object=await atStage('manifest.persist',()=>writeManifest(env,built.envelope));
+            const version=await atStage('db.commit',()=>repo.commit(m,token,built.envelope,object.key,object.hash,object.bytes));
+            await atStage('source.ack',()=>source.ack(m,version.bundle_version_id,'COMPLETED'));
+            log('bundle.persisted',{captureId:m.source.captureId,buildId:m.buildId,bundleVersionId:version.bundle_version_id,manifestState:version.manifest_state,qualification:version.qualification_state,evidenceMode:'PAGE_COPY_PC2',manifestHash:version.manifest_hash});return;
+        }
         const snapshot=await atStage('source.snapshot',()=>source.load(m.source)),ids=await atStage('build.identity',()=>identity(m.source,m.profile));
         const available=new Set(snapshot.artifacts.filter(a=>a.status==='FINALIZED').map(a=>a.artifactId));
         const pinIds=[...new Set(snapshot.events.flatMap(eventArtifactRefs))].filter(id=>available.has(id)).sort();
@@ -76,22 +91,22 @@ export async function consumeBuilds(batch:MessageBatch<unknown>,env:UiBundleEnv)
     for(const message of batch.messages) {
         let parsed:BuildMessage|null=null;
         try {
-            parsed=await validateMessage(message.body,env.UI_BUNDLE_SOURCE_SECRET);
+            parsed=await atStage('message.validate',()=>validateMessage(message.body,env.UI_BUNDLE_SOURCE_SECRET));
             if(await messageBuilderVersion(parsed)!==BUILDER_VERSION) {
                 await repo.supersede(parsed.buildId);
                 log('build.superseded',{buildId:parsed.buildId,captureId:parsed.source.captureId});
                 message.ack();continue;
             }
             if(batch.queue===dlq) {
-                const job=await repo.getBuild(parsed.buildId);
+                const job=await atStage('dlq.db.get',()=>repo.getBuild(parsed!.buildId));
                 if(job?.status==='COMPLETE') {
                     const v=await repo.version(parsed.source.scope,job.bundle_version_id!,true);if(v.access_state==='ACTIVE') { try { await readEnvelope(env,v); } catch(e) { if(!(e instanceof UiError && e.code==='UI_BUNDLE_SOURCE_REVOKED'))throw e; } }
                     try {await new SourceClient(env).ack(parsed,v.bundle_version_id,'COMPLETED');} catch(e) {if(!(e instanceof UiError && e.code==='UI_BUNDLE_SOURCE_REVOKED'))throw e;}
                 } else {
                     if(job?.status==='BUILDING' && job.lease_until>Date.now())fail('UI_BUNDLE_BUILD_BUSY',503);
                     // Persist quarantine first. Do not acknowledge a failed receipt before its disposition is durable.
-                    await repo.quarantine(message.id,parsed.buildId,job?.last_error??'UI_BUNDLE_RETRIES_EXHAUSTED',await digestJson(parsed));
-                    await new SourceClient(env).ack(parsed,null,'REJECTED');
+                    const payloadHash=await digestJson(parsed);await atStage('dlq.db.quarantine',()=>repo.quarantine(message.id,parsed!.buildId,job?.last_error??'UI_BUNDLE_RETRIES_EXHAUSTED',payloadHash));
+                    await atStage('dlq.source.ack',()=>new SourceClient(env).ack(parsed!,null,'REJECTED'));
                 }
                 log('build.dead_letter',{buildId:parsed.buildId,captureId:parsed.source.captureId});
             } else await processBuild(env,parsed);

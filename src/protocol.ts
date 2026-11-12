@@ -1,3 +1,4 @@
+import { PAGE_SOURCE_REF_VERSION, PAGE_EXPORTER_VERSION } from './contracts/pageSource';
 /** Shared with Observation. Artifact and event contracts are the unchanged A.2 contracts. */
 import { canonicalJson, digestJson, sha256, fail, readBytes, decodeJson, UiError } from './contracts/canonical';
 import { id, hash, object, validateScope, validateCaptureStart, validateCaptureComplete, validateArtifactInput,
@@ -21,8 +22,8 @@ export const SOURCE_PREFIX = '/internal/ui-bundles/v1/';
 export const UI_PREFIX = '/internal/ui/v1/';
 
 export interface SourceRef {
-    contractVersion: typeof SOURCE_REF_VERSION;
-    exporterVersion: typeof EXPORTER_VERSION;
+    contractVersion: typeof SOURCE_REF_VERSION | typeof PAGE_SOURCE_REF_VERSION;
+    exporterVersion: typeof EXPORTER_VERSION | typeof PAGE_EXPORTER_VERSION;
     scope: Scope;
     captureId: string;
     sourceRevision: string;
@@ -65,7 +66,7 @@ export function validateProfile(value: unknown): AssemblyProfile {
 }
 export function validateSourceRef(value: unknown): SourceRef {
     const s = object(value,['contractVersion','exporterVersion','scope','captureId','sourceRevision','sourceHash']);
-    if(s.contractVersion !== SOURCE_REF_VERSION || s.exporterVersion !== EXPORTER_VERSION) fail('UI_BUNDLE_SOURCE_VERSION_UNSUPPORTED');
+    if(!((s.contractVersion === SOURCE_REF_VERSION && s.exporterVersion === EXPORTER_VERSION)||(s.contractVersion === PAGE_SOURCE_REF_VERSION && s.exporterVersion === PAGE_EXPORTER_VERSION))) fail('UI_BUNDLE_SOURCE_VERSION_UNSUPPORTED');
     validateScope(s.scope); id(s.captureId); hash(s.sourceRevision); hash(s.sourceHash);
     if(!s.captureId.startsWith('uic_')) fail('UI_BUNDLE_SOURCE_INVALID');
     return s as SourceRef;

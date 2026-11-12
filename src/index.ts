@@ -13,7 +13,7 @@ const PUBLIC_PREFIX = '/v1/qagent-ui/';
 
 export async function route(request:Request,env:UiBundleEnv):Promise<Response> {
     const path=new URL(request.url).pathname;
-    if((path==='/health' || path===PUBLIC_PREFIX+'health') && request.method==='GET')return json({status:'ok',service:'qagent-ui',version:'0.1.4',stage:'08.2-A.3'});
+    if((path==='/health' || path===PUBLIC_PREFIX+'health') && request.method==='GET')return json({status:'ok',service:'qagent-ui',version:'0.1.5',stage:'08.2-A.3'});
     const isPublic=path.startsWith(PUBLIC_PREFIX);
     if(!isPublic && !path.startsWith(UI_PREFIX))return json({status:'error',code:'UI_BUNDLE_ROUTE_NOT_FOUND'},404);
     const op=path.slice((isPublic?PUBLIC_PREFIX:UI_PREFIX).length),repo=new Repository(env.UI_DB);
@@ -51,7 +51,7 @@ export async function route(request:Request,env:UiBundleEnv):Promise<Response> {
         if(!ref)fail('UI_BUNDLE_ARTIFACT_NOT_REFERENCED',403);
         const bytes=await source.artifact(envelope.source,v.artifactId);
         if(bytes.length!==ref.byteLength || await sha256(bytes)!==ref.sha256)fail('UI_BUNDLE_ARTIFACT_HASH_MISMATCH',409);
-        return new Response(bytes.slice().buffer,{headers:{'Content-Type':ref.contentType,'Content-Disposition':`attachment; filename="${v.artifactId}.${ref.contentType==='image/png'?'png':'json'}"`,'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
+        return new Response(bytes.slice().buffer,{headers:{'Content-Type':ref.contentType,'Content-Disposition':`attachment; filename="${v.artifactId}.${ref.contentType==='image/png'?'png':ref.contentType==='application/json'?'json':'bin'}"`,'Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Content-Security-Policy':"sandbox; default-src 'none'"}});
     }
     const checks=[];
     for(const ref of envelope.bundle?.artifacts??[]) {

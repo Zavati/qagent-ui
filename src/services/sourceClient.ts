@@ -1,3 +1,5 @@
+import { PAGE_SOURCE_REF_VERSION, validatePageRoot, validatePagePart, type PageSourceRoot } from '../contracts/pageSource';
+import { PAGE_LIMITS } from '../contracts/uiPageCopy';
 import type { UiBundleEnv } from '../env';
 import type { Scope } from '../contracts/uiCapture';
 import { decodeJson, fail } from '../contracts/canonical';
@@ -10,11 +12,22 @@ export class SourceClient {
         return validateSourceRef(v.source);
     }
     async load(source:SourceRef) {return validateSnapshot(decodeJson(await limitedResponse(await this.fetch('snapshot',source),MAX_SOURCE_BYTES)),source);}
+    async loadPage(source:SourceRef):Promise<PageSourceRoot> {
+        if(source.contractVersion!==PAGE_SOURCE_REF_VERSION)fail('UI_BUNDLE_SOURCE_VERSION_UNSUPPORTED');
+        return validatePageRoot(decodeJson(await limitedResponse(await this.fetch('snapshot',source),PAGE_LIMITS.sourcePartBytes)),source);
+    }
+    async pagePart(source:SourceRef,root:PageSourceRoot,index:number):Promise<any[]> {
+        if(!Number.isSafeInteger(index)||index<0||index>=root.parts.length)fail('UI_PAGE_PART_NOT_FOUND',404);
+        const bytes=await limitedResponse(await this.fetch('source-part',{source,index}),PAGE_LIMITS.sourcePartBytes);
+        if(bytes.length!==root.parts[index].byteLength)fail('UI_PAGE_PART_HASH_MISMATCH',409);
+        return validatePagePart(decodeJson(bytes),root.parts[index],root);
+    }
     async checkAccess(source:SourceRef):Promise<void> {await this.fetch('status',source);}
     async artifact(source:SourceRef,artifactId:string):Promise<Uint8Array> {
-        return limitedResponse(await this.fetch('artifact',{source,artifactId}),1048576);
+        return limitedResponse(await this.fetch('artifact',{source,artifactId}),source.contractVersion===PAGE_SOURCE_REF_VERSION?PAGE_LIMITS.artifactBytes:1048576);
     }
     async pin(source:SourceRef,bundleVersionId:string,artifactIds:string[]):Promise<void> {
+        if(source.contractVersion===PAGE_SOURCE_REF_VERSION && artifactIds.length>128){for(let i=0;i<artifactIds.length;i+=128)await this.pin(source,bundleVersionId,artifactIds.slice(i,i+128));return;}
         const response=await this.fetch('pin',{source,bundleVersionId,artifactIds});
         const r=decodeJson(await limitedResponse(response,32768)) as any;
         const returned=[...(Array.isArray(r.pinnedArtifactIds)?r.pinnedArtifactIds:[]),...(Array.isArray(r.unavailableArtifactIds)?r.unavailableArtifactIds:[])].sort();
