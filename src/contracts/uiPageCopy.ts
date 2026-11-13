@@ -1,12 +1,15 @@
-/** PAGE-COPY PC.2. Explicit v2 contracts; v1 validators remain unchanged.
- * New writes are synthetic-only until the observed collector/sanitizers are implemented in PC.3.
+/** PAGE-COPY PC.3. Explicit v2 contracts; v1 validators remain unchanged.
+ * Observed writes require the dedicated observed revision and the inherited FULL_TEST policy.
  * The wire representation is archival evidence, never executable Console content. */
-import { canonicalJson, decodeJson, fail } from './canonical';
+import { checkedUrl } from './observedPrivacy';
+import { canonicalJson, decodeJson, digestJson, fail } from './canonical';
 import { object, id, hash, safeUrl, origin, validateAction, validateCheckpoint, validateInteraction,
     validateEvents, validateCaptureStart, validateCaptureComplete, CONTRACTS, UI_LIMITS,
-    type ArtifactInput, type CaptureStart, type CaptureComplete, type EventsInput, type UiEvent } from './uiCapture';
+    validateCapturePolicy, validateVisualPolicy, type CapturePolicy, type VisualPolicy, type ArtifactInput, type CaptureStart, type CaptureComplete, type EventsInput, type UiEvent } from './uiCapture';
 
 export const PAGE_REVISION = '08.2-PC.2.r1';
+export const PAGE_OBSERVED_REVISION = '08.2-PC.3.r1';
+export const PAGE_OBSERVED_PRIVACY = 'qagent.ui-page-observed.v1';
 export const PAGE_CONTRACTS = Object.freeze({capture:'qagent.ui-capture.v2',events:'qagent.ui-capture-events.v2',artifact:'qagent.ui-artifact.v2',action:'qagent.ui-action.v2',interaction:'qagent.ui-interaction.v2',checkpoint:'qagent.ui-checkpoint.v2'});
 // Initial tested profile: bound the whole verification pass; do not advertise 2048 objects yet.
 export const PAGE_LIMITS = Object.freeze({artifactBytes:16*1024*1024,artifactsPerCapture:512,captureArtifactBytes:256*1024*1024,
@@ -21,7 +24,7 @@ export interface PageArtifactInput {
     contentType:string; originalContentType:string; storedEncoding:'identity'; representation:'UTF8_TEXT'|'STRUCTURED_JSON'|'BINARY';
     captureMethod:'NETWORK_BODY'|'DOM_SERIALIZATION'|'DOM_SNAPSHOT'|'CSSOM'|'FORM_STATE'|'SCREENSHOT'|'MANIFEST'|'SYNTHETIC_FIXTURE';
     completeness:'COMPLETE'|'TRUNCATED'; byteLength:number;sha256:string;
-    privacy:{policyVersion:typeof PAGE_PRIVACY;dataOrigin:'SYNTHETIC_CONTROL';transformations:{kind:'REDACTED'|'PSEUDONYMIZED';path:string}[]};
+    privacy:{policyVersion:typeof PAGE_PRIVACY|typeof PAGE_OBSERVED_PRIVACY;dataOrigin:'SYNTHETIC_CONTROL'|'OBSERVED_SANITIZED';visual?:VisualPolicy;transformations:{kind:'REDACTED'|'PSEUDONYMIZED';path:string}[]};
 }
 export type AnyArtifactInput=ArtifactInput|PageArtifactInput;
 export type PageCaptureStart=CaptureStart & {limitsSnapshot?:PageLimits};
@@ -41,9 +44,11 @@ export function resolvePageLimits(env:Record<string,unknown>):PageLimits {
     return pageLimits(defaults);
 }
 export function validatePageStart(value:unknown,stored=false):PageCaptureStart {
-    const v=object(value,['contractVersion','operationId','dataOrigin','documentId','entryUrl','sourceBuildRef','issues'],stored?['limitsSnapshot']:[]);
+    const v=object(value,['contractVersion','operationId','dataOrigin','documentId','entryUrl','sourceBuildRef','issues'],stored?['limitsSnapshot','capturePolicy']:['capturePolicy']);
     if(v.contractVersion!==PAGE_CONTRACTS.capture)fail('UI_CONTRACT_VERSION_UNSUPPORTED');
-    if(v.dataOrigin!=='SYNTHETIC_CONTROL')fail('UI_PAGE_OBSERVED_NOT_ENABLED',422);
+    if(!['SYNTHETIC_CONTROL','OBSERVED_SANITIZED'].includes(v.dataOrigin))fail('UI_CAPTURE_SOURCE_UNSUPPORTED',422);
+    if(v.dataOrigin==='OBSERVED_SANITIZED') { const policy=validateCapturePolicy(v.capturePolicy); if(policy.mode!=='FULL_TEST'||!policy.acknowledgeTestData)fail('UI_PAGE_FULL_TEST_REQUIRED',422); }
+    else if(v.capturePolicy!==undefined)fail('UI_PAGE_CONTRACT_INVALID',422);
     const {limitsSnapshot,...base}=v;validateCaptureStart({...base,contractVersion:CONTRACTS.capture});
     if(stored){pageLimits(limitsSnapshot);}return v as PageCaptureStart;
 }
@@ -59,8 +64,11 @@ export function validatePageArtifact(value:unknown):PageArtifactInput {
     if(typeof v.contentType!=='string'||!/^[-a-z0-9.+]+\/[-a-z0-9.+]+$/.test(v.contentType)||v.contentType.length>128)fail('UI_MEDIA_TYPE_UNSUPPORTED',415);
     string(v.originalContentType,256);choice(v.storedEncoding,['identity']);choice(v.representation,['UTF8_TEXT','STRUCTURED_JSON','BINARY']);
     choice(v.captureMethod,['NETWORK_BODY','DOM_SERIALIZATION','DOM_SNAPSHOT','CSSOM','FORM_STATE','SCREENSHOT','MANIFEST','SYNTHETIC_FIXTURE']);choice(v.completeness,['COMPLETE','TRUNCATED']);
-    const p=object(v.privacy,['policyVersion','dataOrigin','transformations']);
-    if(p.policyVersion!==PAGE_PRIVACY||p.dataOrigin!=='SYNTHETIC_CONTROL')fail('UI_PAGE_OBSERVED_NOT_ENABLED',422);
+    const p=object(v.privacy,['policyVersion','dataOrigin','transformations'],['visual']);
+    if(!((p.policyVersion===PAGE_PRIVACY&&p.dataOrigin==='SYNTHETIC_CONTROL')||(p.policyVersion===PAGE_OBSERVED_PRIVACY&&p.dataOrigin==='OBSERVED_SANITIZED')))fail('UI_PAGE_PRIVACY_POLICY_INVALID',422);
+    if(p.dataOrigin==='OBSERVED_SANITIZED'&&v.captureMethod==='SYNTHETIC_FIXTURE')fail('UI_PAGE_ARTIFACT_FORMAT_INVALID',422);
+    if(p.visual!==undefined&&v.kind!=='SCREENSHOT_PNG')fail('UI_PAGE_ARTIFACT_FORMAT_INVALID',422);
+    if(v.kind==='SCREENSHOT_PNG'&&p.dataOrigin==='OBSERVED_SANITIZED')validateVisualPolicy(p.visual);
     if(!Array.isArray(p.transformations)||p.transformations.length>64)fail();
     p.transformations.forEach((t:any)=>{object(t,['kind','path']);choice(t.kind,['REDACTED','PSEUDONYMIZED']);string(t.path,512);});
     const jsonKinds=['DOM_SNAPSHOT_JSON','LAYOUT_JSON','FORM_STATE_JSON','RESOURCE_MANIFEST_JSON','ACTION_VALUE_JSON','HEADERS_JSON'];
@@ -71,23 +79,39 @@ export function validatePageArtifact(value:unknown):PageArtifactInput {
     if(v.kind==='SCREENSHOT_PNG'&&(v.contentType!=='image/png'||v.representation!=='BINARY'))fail('UI_PAGE_ARTIFACT_FORMAT_INVALID',422);
     if(v.kind==='ASSET_BINARY'&&(!binaryTypes.includes(v.contentType)||v.representation!=='BINARY'))fail('UI_PAGE_BINARY_UNSUPPORTED',415);
     if(['HTTP_REQUEST_BODY','HTTP_RESPONSE_BODY'].includes(v.kind)) {
-        const ok=v.representation==='STRUCTURED_JSON'?v.contentType==='application/json':v.representation==='BINARY'?v.contentType==='application/octet-stream':['text/plain','text/html','text/css','text/javascript','application/javascript','application/x-www-form-urlencoded','application/xml','text/xml'].includes(v.contentType);
+        const ok=v.representation==='STRUCTURED_JSON'?(v.contentType==='application/json'||(p.dataOrigin==='OBSERVED_SANITIZED'&&/^application\/[a-z0-9.+-]+\+json$/.test(v.contentType))):v.representation==='BINARY'?(v.contentType==='application/octet-stream'||(p.dataOrigin==='OBSERVED_SANITIZED'&&binaryTypes.includes(v.contentType))):['text/plain','text/html','text/css','text/javascript','application/javascript','application/x-www-form-urlencoded','application/xml','text/xml'].includes(v.contentType);
         if(!ok)fail('UI_PAGE_ARTIFACT_FORMAT_INVALID',422);
+        // Opaque observed bytes cannot receive a credential inspection. Known raster/font formats remain explicit.
+        if(p.dataOrigin==='OBSERVED_SANITIZED'&&v.contentType==='application/octet-stream')fail('UI_PAGE_BINARY_UNSUPPORTED',415);
     }
     if(v.kind==='RESOURCE_MANIFEST_JSON'&&v.byteLength>PAGE_LIMITS.manifestBytes)fail('UI_PAGE_MANIFEST_LIMIT',413);
     return v as PageArtifactInput;
 }
 export function artifactLimit(d:AnyArtifactInput):number{return isPageArtifact(d)?PAGE_LIMITS.artifactBytes:UI_LIMITS.artifactBytes;}
+export type PageStateTriggerKind = 'INITIAL'|'NAVIGATION'|'ACTION'|'DOM_CHANGE'|'MANUAL'|'STOP';
 export interface PageStateWire {
     contractVersion:'qagent.ui-page-state.v1';stateId:string;stateSequence:number;observedSequence:number;url:string;
     captureStartedUs:number;captureFinishedUs:number;stability:'STABLE'|'UNSTABLE'|'INTERRUPTED';
     domRef:string|null;htmlRef:string|null;layoutRef:string|null;formStateRef:string|null;resourceManifestRef:string|null;screenshotRef:string|null;mhtmlRef:null;missing:string[];
+    triggerKind?:PageStateTriggerKind;
 }
 export function validatePageState(value:unknown):PageStateWire {
-    const v=object(value,['contractVersion','stateId','stateSequence','observedSequence','url','captureStartedUs','captureFinishedUs','stability','domRef','htmlRef','layoutRef','formStateRef','resourceManifestRef','screenshotRef','mhtmlRef','missing']);
-    if(v.contractVersion!=='qagent.ui-page-state.v1')fail('UI_CONTRACT_VERSION_UNSUPPORTED');id(v.stateId);uint(v.stateSequence);uint(v.observedSequence);safeUrl(v.url);uint(v.captureStartedUs);uint(v.captureFinishedUs);if(v.captureFinishedUs<v.captureStartedUs)fail('UI_PAGE_TIME_INVALID');
+    const v=object(value,['contractVersion','stateId','stateSequence','observedSequence','url','captureStartedUs','captureFinishedUs','stability','domRef','htmlRef','layoutRef','formStateRef','resourceManifestRef','screenshotRef','mhtmlRef','missing'],['triggerKind']);
+    if(v.contractVersion!=='qagent.ui-page-state.v1')fail('UI_CONTRACT_VERSION_UNSUPPORTED');id(v.stateId);uint(v.stateSequence);uint(v.observedSequence);checkedUrl(v.url,'FULL_TEST');uint(v.captureStartedUs);uint(v.captureFinishedUs);if(v.captureFinishedUs<v.captureStartedUs)fail('UI_PAGE_TIME_INVALID');
     choice(v.stability,['STABLE','UNSTABLE','INTERRUPTED']);for(const k of ['domRef','htmlRef','layoutRef','formStateRef','resourceManifestRef','screenshotRef'])nullable(v[k]);
+    if(v.triggerKind!==undefined)choice(v.triggerKind,['INITIAL','NAVIGATION','ACTION','DOM_CHANGE','MANUAL','STOP']);
     if(v.mhtmlRef!==null)fail('UI_PAGE_MHTML_UNSUPPORTED',422);ids(v.missing,64);return v as PageStateWire;
+}
+
+/** Public, independently reproducible cache key. Credentials/private header fingerprints
+ * NEVER enter this wire proof. The producer additionally checks effective request headers. */
+export async function pageCacheMatchKey(captureId:string,payload:any):Promise<string> {
+    id(captureId);id(payload.documentId);id(payload.navigationId);id(payload.frameId);
+    if(payload.request?.method!=='GET'||payload.request.bodyRef!==null)fail('UI_PAGE_CACHE_EVIDENCE_INVALID');
+    return digestJson({policyVersion:PAGE_OBSERVED_PRIVACY,captureId,documentId:payload.documentId,
+        navigationId:payload.navigationId,frameId:payload.frameId,request:{method:payload.request.method,
+            origin:payload.request.origin,path:payload.request.path,query:payload.request.query,
+            bodyRef:payload.request.bodyRef,businessHeadersRef:payload.request.businessHeadersRef}});
 }
 export function validateEventsAny(value:unknown):EventsInput {
     if((value as any)?.contractVersion!==PAGE_CONTRACTS.events)return validateEvents(value);
@@ -108,7 +132,13 @@ export function validateEventsAny(value:unknown):EventsInput {
             nullable(stateBeforeId);nullable(stateAfterId);
             if(scrollTarget!==undefined){id(scrollTarget);if(p.type!=='SCROLL')fail();}
             if(clickCount!==undefined){uint(clickCount,2);if(clickCount<1||p.type!=='CLICK')fail();}
-            validateAction({...old,contractVersion:CONTRACTS.action});
+            if(p.type==='SCROLL'){
+                if((scrollTarget!==undefined)!==(old.target!==undefined))fail('UI_PAGE_SCROLL_TARGET_INVALID');
+                const {target:scrollElement,...scrollBase}=old;
+                if(scrollElement){const {position:_,...clickBase}=scrollBase;validateAction({...clickBase,contractVersion:CONTRACTS.action,type:'CLICK',target:scrollElement});}
+                validateAction({...scrollBase,contractVersion:CONTRACTS.action});
+            }else if(p.type==='NAVIGATE'){checkedUrl(p.destination,'FULL_TEST');validateAction({...old,contractVersion:CONTRACTS.action,destination:'https://capture.invalid/'});}
+            else validateAction({...old,contractVersion:CONTRACTS.action});
         } else if(e.kind==='CHECKPOINT') {
             if(p.contractVersion!==PAGE_CONTRACTS.checkpoint)fail('UI_CONTRACT_VERSION_UNSUPPORTED');
             const {pageCapture,...old}=base;validateCheckpoint({...old,contractVersion:CONTRACTS.checkpoint});

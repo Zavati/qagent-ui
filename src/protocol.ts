@@ -1,4 +1,4 @@
-import { PAGE_SOURCE_REF_VERSION, PAGE_EXPORTER_VERSION } from './contracts/pageSource';
+import { PAGE_SOURCE_REF_VERSION, PAGE_EXPORTER_VERSION, PAGE_OBSERVED_EXPORTER_VERSION, isPageExporter } from './contracts/pageSource';
 /** Shared with Observation. Artifact and event contracts are the unchanged A.2 contracts. */
 import { canonicalJson, digestJson, sha256, fail, readBytes, decodeJson, UiError } from './contracts/canonical';
 import { id, hash, object, validateScope, validateCaptureStart, validateCaptureComplete, validateArtifactInput,
@@ -10,6 +10,8 @@ export const BUILD_REQUEST_VERSION = 'qagent.ui-bundle-build-request.v1';
 export const ASSEMBLY_VERSION = 'qagent.ui-bundle-assembly.v1';
 export const EXPORTER_VERSION = 'qagent_ui_source_v1';
 export const BUILDER_VERSION = 'qagent_ui_bundle_builder_v2';
+export const OBSERVED_BUILDER_VERSION = 'qagent_ui_bundle_builder_v3';
+export function builderVersionForSource(source:SourceRef):string{return source.exporterVersion===PAGE_OBSERVED_EXPORTER_VERSION?OBSERVED_BUILDER_VERSION:BUILDER_VERSION;}
 export const LEGACY_BUILDER_VERSION = 'qagent_ui_bundle_builder_v1';
 export const PROFILE_VERSION = 'qagent.ui-assembly-profile.v1';
 export const MATCH_VERSION = 'qagent_ui_exact_request_v1';
@@ -23,7 +25,7 @@ export const UI_PREFIX = '/internal/ui/v1/';
 
 export interface SourceRef {
     contractVersion: typeof SOURCE_REF_VERSION | typeof PAGE_SOURCE_REF_VERSION;
-    exporterVersion: typeof EXPORTER_VERSION | typeof PAGE_EXPORTER_VERSION;
+    exporterVersion: typeof EXPORTER_VERSION | typeof PAGE_EXPORTER_VERSION | typeof PAGE_OBSERVED_EXPORTER_VERSION;
     scope: Scope;
     captureId: string;
     sourceRevision: string;
@@ -66,7 +68,7 @@ export function validateProfile(value: unknown): AssemblyProfile {
 }
 export function validateSourceRef(value: unknown): SourceRef {
     const s = object(value,['contractVersion','exporterVersion','scope','captureId','sourceRevision','sourceHash']);
-    if(!((s.contractVersion === SOURCE_REF_VERSION && s.exporterVersion === EXPORTER_VERSION)||(s.contractVersion === PAGE_SOURCE_REF_VERSION && s.exporterVersion === PAGE_EXPORTER_VERSION))) fail('UI_BUNDLE_SOURCE_VERSION_UNSUPPORTED');
+    if(!((s.contractVersion === SOURCE_REF_VERSION && s.exporterVersion === EXPORTER_VERSION)||(s.contractVersion === PAGE_SOURCE_REF_VERSION && isPageExporter(s.exporterVersion)))) fail('UI_BUNDLE_SOURCE_VERSION_UNSUPPORTED');
     validateScope(s.scope); id(s.captureId); hash(s.sourceRevision); hash(s.sourceHash);
     if(!s.captureId.startsWith('uic_')) fail('UI_BUNDLE_SOURCE_INVALID');
     return s as SourceRef;
@@ -117,10 +119,11 @@ export async function identityForBuilder(source: SourceRef,profile: AssemblyProf
     const version=await digestJson({source,profile,builderVersion,matchPolicyVersion:MATCH_VERSION});
     return {buildId:'uib_'+version,journeyId:'uj_'+captureKey,journeyVersionId:'ujv_'+version,bundleId:'urb_'+captureKey,bundleVersionId:'urbv_'+version};
 }
-export async function identity(source: SourceRef,profile: AssemblyProfile) { return identityForBuilder(source,profile,BUILDER_VERSION); }
+export async function identity(source: SourceRef,profile: AssemblyProfile) { return identityForBuilder(source,profile,builderVersionForSource(source)); }
 export async function messageBuilderVersion(message:Pick<BuildMessage,'source'|'profile'|'buildId'>):Promise<string|null> {
-    if(message.buildId===(await identityForBuilder(message.source,message.profile,BUILDER_VERSION)).buildId)return BUILDER_VERSION;
-    if(message.buildId===(await identityForBuilder(message.source,message.profile,LEGACY_BUILDER_VERSION)).buildId)return LEGACY_BUILDER_VERSION;
+    const expected=builderVersionForSource(message.source);
+    if(message.buildId===(await identityForBuilder(message.source,message.profile,expected)).buildId)return expected;
+    if(message.source.exporterVersion!==PAGE_OBSERVED_EXPORTER_VERSION&&message.buildId===(await identityForBuilder(message.source,message.profile,LEGACY_BUILDER_VERSION)).buildId)return LEGACY_BUILDER_VERSION;
     return null;
 }
 export async function makeMessage(source:SourceRef,profile:AssemblyProfile,secret:string|undefined):Promise<BuildMessage> {

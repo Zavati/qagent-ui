@@ -1,4 +1,4 @@
-# qagent-ui 0.1.5
+# qagent-ui 0.1.6
 
 Domínio UI do QAgent: montagem, qualificação e persistência de bundles.
 Não executa navegador e não aprova testes UI.
@@ -10,8 +10,15 @@ Usuário/Plugin não precisa disparar uma montagem manual.
 ## PAGE-COPY PC.2
 
 Leitor sintético v2 aditivo e compatível com a origem paginada. Ver [contrato/limites](docs/page-copy-pc2.md).
-Captura real do Plugin, representação visual e execução permanecem nas próximas etapas.
 Mantenha as rotas, IDs, filas e secrets do seu checkout. O Wrangler deste pacote é um template.
+
+## PAGE-COPY observado PC.3
+
+O consumidor aceita a origem observada v2 emitida por Observation, verifica novamente os bytes e
+produz o recibo `qagent.ui-page-evidence.v2`: índice de documentos/estados/recursos e referências
+determinísticas de fixtures de negócio. A qualificação separa integridade, disponibilidade para
+mocks, referência estrutural/visual e limitações de execução. Ver [contrato e usos](docs/page-copy-observed.md).
+O conteúdo capturado não é executado. Não há Runner, teste aprovado nem asserção de negócio gerada.
 
 ## Validação
 
@@ -19,6 +26,7 @@ Mantenha as rotas, IDs, filas e secrets do seu checkout. O Wrangler deste pacote
 npm ci --include=dev
 npm test
 npm run test:pc2
+npm run test:pc3
 npm run check
 npm run test:integration -- --observation ../qagent-observation
 npm run test:pc2 -- --observation ../qagent-observation
@@ -33,6 +41,8 @@ As suítes locais não substituem o smoke remoto/workerd.
 COMPLETE = operação terminada. SEALED = evidência íntegra segundo o montador.
 READY/NEEDS_ATTENTION = qualificação de uso, separada de integridade. Nenhum significa teste aprovado.
 PC.2 arquiva evidência sintética v2 sem declarar replay elegível. Builds v1 existentes permanecem legíveis.
+PC.3 mantém o mesmo princípio: uma resposta HTTP 400 íntegra pode servir como fixture observada,
+e falta de checkpoint/sourceBuild/bootstrap limita os respectivos usos sem apagar essa evidência.
 
 ## Histórico
 

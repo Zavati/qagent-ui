@@ -1,6 +1,6 @@
 {
   "name": "qagent-ui",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "QAgent UI domain: immutable replay bundle assembly and qualification",
   "type": "module",
   "scripts": {
@@ -9,11 +9,12 @@
     "typecheck": "npm run cf-types && tsc --noEmit",
     "test": "node tools/test-bundles.mjs",
     "build": "npm run typecheck",
-    "check": "npm run typecheck && npm test && npm run test:pc2",
+    "check": "npm run typecheck && npm test && npm run test:pc2 && npm run test:pc3",
     "deploy": "npm run check && node tools/configure.mjs --check && wrangler deploy",
     "ops": "node tools/ui-ops.mjs",
     "test:integration": "node tools/test-integration.mjs",
-    "test:pc2": "node tools/test-page-copy.mjs"
+    "test:pc2": "node tools/test-page-copy.mjs",
+    "test:pc3": "node tools/test-page-copy-observed.mjs"
   },
   "author": "",
   "license": "ISC",

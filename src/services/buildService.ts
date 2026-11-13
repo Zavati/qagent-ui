@@ -2,7 +2,7 @@ import { PAGE_SOURCE_REF_VERSION } from '../contracts/pageSource';
 import { assemblePageEvidence } from './pageEvidence';
 import { canonicalJson,digestJson,sha256,decodeJson,verifyManifestHash,UiError,fail } from '../contracts/canonical';
 import { eventArtifactRefs,type Scope } from '../contracts/uiCapture';
-import { MAIN_QUEUE,DLQ,MAX_MANIFEST_BYTES,BUILDER_VERSION,identity,messageBuilderVersion,validateMessage,makeMessage,errorCode,log,type BuildMessage,type AssemblyProfile } from '../protocol';
+import { MAIN_QUEUE,DLQ,MAX_MANIFEST_BYTES,builderVersionForSource,identity,messageBuilderVersion,validateMessage,makeMessage,errorCode,log,type BuildMessage,type AssemblyProfile } from '../protocol';
 import type { UiBundleEnv } from '../env';
 import { Repository,type VersionRow } from '../storage/repository';
 import { SourceClient } from './sourceClient';
@@ -62,7 +62,7 @@ export async function processBuild(env:UiBundleEnv,m:BuildMessage):Promise<void>
             const object=await atStage('manifest.persist',()=>writeManifest(env,built.envelope));
             const version=await atStage('db.commit',()=>repo.commit(m,token,built.envelope,object.key,object.hash,object.bytes));
             await atStage('source.ack',()=>source.ack(m,version.bundle_version_id,'COMPLETED'));
-            log('bundle.persisted',{captureId:m.source.captureId,buildId:m.buildId,bundleVersionId:version.bundle_version_id,manifestState:version.manifest_state,qualification:version.qualification_state,evidenceMode:'PAGE_COPY_PC2',manifestHash:version.manifest_hash});return;
+            log('bundle.persisted',{captureId:m.source.captureId,buildId:m.buildId,bundleVersionId:version.bundle_version_id,manifestState:version.manifest_state,qualification:version.qualification_state,evidenceMode:root.capture.descriptor.dataOrigin==='OBSERVED_SANITIZED'?'PAGE_COPY_OBSERVED':'PAGE_COPY_PC2',manifestHash:version.manifest_hash});return;
         }
         const snapshot=await atStage('source.snapshot',()=>source.load(m.source)),ids=await atStage('build.identity',()=>identity(m.source,m.profile));
         const available=new Set(snapshot.artifacts.filter(a=>a.status==='FINALIZED').map(a=>a.artifactId));
@@ -92,7 +92,7 @@ export async function consumeBuilds(batch:MessageBatch<unknown>,env:UiBundleEnv)
         let parsed:BuildMessage|null=null;
         try {
             parsed=await atStage('message.validate',()=>validateMessage(message.body,env.UI_BUNDLE_SOURCE_SECRET));
-            if(await messageBuilderVersion(parsed)!==BUILDER_VERSION) {
+            if(await messageBuilderVersion(parsed)!==builderVersionForSource(parsed.source)) {
                 await repo.supersede(parsed.buildId);
                 log('build.superseded',{buildId:parsed.buildId,captureId:parsed.source.captureId});
                 message.ack();continue;
@@ -141,7 +141,7 @@ export async function recoverBuilds(env:UiBundleEnv):Promise<void> {
         if(!claimed.meta.changes)continue;
         try {
             const message=await validateMessage(JSON.parse(row.message_json),env.UI_BUNDLE_SOURCE_SECRET);
-            if(await messageBuilderVersion(message)!==BUILDER_VERSION) {await repo.supersede(row.build_id);log('build.superseded',{buildId:row.build_id,captureId:message.source.captureId});continue;}
+            if(await messageBuilderVersion(message)!==builderVersionForSource(message.source)) {await repo.supersede(row.build_id);log('build.superseded',{buildId:row.build_id,captureId:message.source.captureId});continue;}
             await env.UI_BUNDLE_BUILD_QUEUE.send(message);
             await env.UI_DB.prepare("UPDATE ui_bundle_builds SET next_dispatch_at=? WHERE build_id=? AND status IN ('PENDING','BUILDING')").bind(Date.now()+900000,row.build_id).run();
             log('build.republished',{buildId:row.build_id});

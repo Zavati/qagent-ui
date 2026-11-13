@@ -5,17 +5,22 @@ import { PAGE_LIMITS, validatePageStart, validateCompleteAny, ids, uint } from '
 export const PAGE_SOURCE_VERSION='qagent.ui-page-source.v2';
 export const PAGE_SOURCE_REF_VERSION='qagent.ui-bundle-source-ref.v2';
 export const PAGE_EXPORTER_VERSION='qagent_ui_page_source_v2';
+export const PAGE_OBSERVED_EXPORTER_VERSION='qagent_ui_page_observed_source_v2';
+export function isPageExporter(value:unknown):boolean{return value===PAGE_EXPORTER_VERSION||value===PAGE_OBSERVED_EXPORTER_VERSION;}
+export function pageExporterForCapture(capture:{dataOrigin:string}):typeof PAGE_EXPORTER_VERSION|typeof PAGE_OBSERVED_EXPORTER_VERSION{return capture.dataOrigin==='OBSERVED_SANITIZED'?PAGE_OBSERVED_EXPORTER_VERSION:PAGE_EXPORTER_VERSION;}
 export const PAGE_PART_VERSION='qagent.ui-page-source-part.v1';
 export interface PagePartRef {kind:'EVENTS'|'ARTIFACTS';index:number;sha256:string;byteLength:number;count:number;}
-export interface PageSourceRoot {contractVersion:typeof PAGE_SOURCE_VERSION;exporterVersion:typeof PAGE_EXPORTER_VERSION;scope:Scope;captureId:string;sourceRevision:string;
+export interface PageSourceRoot {contractVersion:typeof PAGE_SOURCE_VERSION;exporterVersion:typeof PAGE_EXPORTER_VERSION|typeof PAGE_OBSERVED_EXPORTER_VERSION;scope:Scope;captureId:string;sourceRevision:string;
  capture:{descriptor:any;completion:any;status:string;createdAt:number;completedAt:number;origins:string[]};
  ingestion:{expectedEvents:number;lastSequence:number;eventChainHash:string};parts:PagePartRef[];reachableArtifactIds:string[];counts:{events:number;artifacts:number;referencedArtifacts:number};}
 export function validatePartRef(value:unknown):PagePartRef {const v=object(value,['kind','index','sha256','byteLength','count']);if(!['EVENTS','ARTIFACTS'].includes(v.kind))fail('UI_PAGE_SOURCE_INVALID');uint(v.index,PAGE_LIMITS.sourceParts);hash(v.sha256);uint(v.byteLength,PAGE_LIMITS.sourcePartBytes);uint(v.count,PAGE_LIMITS.sourcePartItems);if(!v.byteLength||!v.count)fail('UI_PAGE_SOURCE_INVALID');return v as PagePartRef;}
-export async function validatePageRoot(value:unknown,ref:{scope:Scope;captureId:string;sourceRevision:string;sourceHash:string}):Promise<PageSourceRoot> {
+export async function validatePageRoot(value:unknown,ref:{scope:Scope;captureId:string;sourceRevision:string;sourceHash:string;exporterVersion?:string}):Promise<PageSourceRoot> {
  const v=object(value,['contractVersion','exporterVersion','scope','captureId','sourceRevision','capture','ingestion','parts','reachableArtifactIds','counts']);
- if(v.contractVersion!==PAGE_SOURCE_VERSION||v.exporterVersion!==PAGE_EXPORTER_VERSION||v.captureId!==ref.captureId||v.sourceRevision!==ref.sourceRevision||canonicalJson(v.scope)!==canonicalJson(ref.scope))fail('UI_BUNDLE_SOURCE_SCOPE_MISMATCH',409);
+ if(v.contractVersion!==PAGE_SOURCE_VERSION||!isPageExporter(v.exporterVersion)||v.captureId!==ref.captureId||v.sourceRevision!==ref.sourceRevision||canonicalJson(v.scope)!==canonicalJson(ref.scope))fail('UI_BUNDLE_SOURCE_SCOPE_MISMATCH',409);
  validateScope(v.scope);id(v.captureId);hash(v.sourceRevision);if(await digestJson(v)!==ref.sourceHash)fail('UI_BUNDLE_SOURCE_HASH_MISMATCH',409);
+ if(ref.exporterVersion!==undefined&&v.exporterVersion!==ref.exporterVersion)fail('UI_BUNDLE_SOURCE_VERSION_UNSUPPORTED',409);
  const c=object(v.capture,['descriptor','completion','status','createdAt','completedAt','origins']);validatePageStart(c.descriptor,true);validateCompleteAny(c.completion);
+ if(v.exporterVersion!==pageExporterForCapture(c.descriptor))fail('UI_BUNDLE_SOURCE_VERSION_UNSUPPORTED',409);
  if(c.completion.contractVersion!==c.descriptor.contractVersion||c.status!==c.completion.outcome||!['RECORDED','PARTIAL','ABORTED'].includes(c.status))fail('UI_BUNDLE_SOURCE_NOT_RECONCILED',409);
  uint(c.createdAt);uint(c.completedAt);if(c.completedAt<c.createdAt||await digestJson(c.completion)!==ref.sourceRevision)fail('UI_BUNDLE_SOURCE_REVISION_MISMATCH',409);
  if(!Array.isArray(c.origins)||c.origins.length!==1||c.origins[0]!==new URL(c.descriptor.entryUrl).origin)fail('UI_BUNDLE_SOURCE_SCOPE_MISMATCH',409);
