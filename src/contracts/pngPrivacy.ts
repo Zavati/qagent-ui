@@ -51,7 +51,15 @@ export function stripPngMetadata(bytes: Uint8Array): Uint8Array {
 }
 function paeth(a: number, b: number, c: number) { const p = a + b - c, pa = Math.abs(p - a), pb = Math.abs(p - b), pc = Math.abs(p - c); return pa <= pb && pa <= pc ? a : pb <= pc ? b : c; }
 /** Validate masking again on the server. No OCR or claim of universal PII classification. */
-export async function inspectMaskedPng(bytes: Uint8Array, policy: VisualPolicy): Promise<void> {
+export async function inspectMaskedPng(bytes: Uint8Array, policy: VisualPolicy): Promise<void> {return inspectPng(bytes,policy,true);}
+/** Environment-managed test screenshots retain their actual pixels; only encoding and bounds are checked.
+ * The internal full-frame geometry is not a privacy declaration and is never persisted. */
+export async function inspectUnmaskedPng(bytes:Uint8Array):Promise<void> {
+    const cs=chunks(bytes),header=cs[0].data;if(header.length!==13)fail('UI_PNG_INVALID',422);
+    const d=new DataView(header.buffer,header.byteOffset,header.byteLength),width=d.getUint32(0),height=d.getUint32(4);
+    return inspectPng(bytes,{width,height,allowed:[{x:0,y:0,width,height}],masked:[],background:'SOLID_32'},false);
+}
+async function inspectPng(bytes: Uint8Array, policy: VisualPolicy,verifyMask:boolean): Promise<void> {
     const v = validateVisualPolicy(policy), cs = chunks(bytes);
     if (cs.some(x => !['IHDR', 'IDAT', 'IEND'].includes(x.type)))
         fail('UI_PNG_METADATA_FORBIDDEN', 422);
@@ -105,6 +113,7 @@ export async function inspectMaskedPng(bytes: Uint8Array, policy: VisualPolicy):
             const predictor = filter === 0 ? 0 : filter === 1 ? a : filter === 2 ? b : filter === 3 ? Math.floor((a + b) / 2) : paeth(a, b, c);
             row[x] = (raw[y * (stride + 1) + 1 + x] + predictor) & 255;
         }
+        if(!verifyMask){[prev,row]=[row,prev];continue;}
         const allowed = new Uint8Array(v.width);
         for (const r of v.allowed)
             if (y >= r.y && y < r.y + r.height)

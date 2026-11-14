@@ -1,5 +1,6 @@
 import { PAGE_SOURCE_REF_VERSION } from '../contracts/pageSource';
 import { assemblePageEvidence } from './pageEvidence';
+import { isObservedPageOrigin } from '../contracts/uiPageCopy';
 import { canonicalJson,digestJson,sha256,decodeJson,verifyManifestHash,UiError,fail } from '../contracts/canonical';
 import { eventArtifactRefs,type Scope } from '../contracts/uiCapture';
 import { MAIN_QUEUE,DLQ,MAX_MANIFEST_BYTES,builderVersionForSource,identity,messageBuilderVersion,validateMessage,makeMessage,errorCode,log,type BuildMessage,type AssemblyProfile } from '../protocol';
@@ -62,7 +63,7 @@ export async function processBuild(env:UiBundleEnv,m:BuildMessage):Promise<void>
             const object=await atStage('manifest.persist',()=>writeManifest(env,built.envelope));
             const version=await atStage('db.commit',()=>repo.commit(m,token,built.envelope,object.key,object.hash,object.bytes));
             await atStage('source.ack',()=>source.ack(m,version.bundle_version_id,'COMPLETED'));
-            log('bundle.persisted',{captureId:m.source.captureId,buildId:m.buildId,bundleVersionId:version.bundle_version_id,manifestState:version.manifest_state,qualification:version.qualification_state,evidenceMode:root.capture.descriptor.dataOrigin==='OBSERVED_SANITIZED'?'PAGE_COPY_OBSERVED':'PAGE_COPY_PC2',manifestHash:version.manifest_hash});return;
+            log('bundle.persisted',{captureId:m.source.captureId,buildId:m.buildId,bundleVersionId:version.bundle_version_id,manifestState:version.manifest_state,qualification:version.qualification_state,evidenceMode:isObservedPageOrigin(root.capture.descriptor.dataOrigin)?'PAGE_COPY_OBSERVED':'PAGE_COPY_PC2',manifestHash:version.manifest_hash});return;
         }
         const snapshot=await atStage('source.snapshot',()=>source.load(m.source)),ids=await atStage('build.identity',()=>identity(m.source,m.profile));
         const available=new Set(snapshot.artifacts.filter(a=>a.status==='FINALIZED').map(a=>a.artifactId));

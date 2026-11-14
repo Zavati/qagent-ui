@@ -8,7 +8,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'qagent-observed-ui-'));
 try {
   const output = compileForNode(root, temp);
-  const result = spawnSync(process.execPath, ['--test', path.join(root, 'tests/page-copy-observed.node.cjs')], {
+  const result = spawnSync(process.execPath, ['--test', path.join(root, 'tests/page-copy-observed.node.cjs'), path.join(root, 'tests/page-environment-managed.node.cjs')], {
     stdio: 'inherit', env: { ...process.env, QAGENT_UI_ROOT: root, QAGENT_UI_BUILD: output },
   });
   process.exitCode = result.status ?? 1;

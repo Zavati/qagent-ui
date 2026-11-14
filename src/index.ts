@@ -1,12 +1,12 @@
 import { id,object,validateScope } from './contracts/uiCapture';
 import { sha256,fail,UiError } from './contracts/canonical';
-import { UI_PREFIX,SOURCE_VERSION,BUILD_REQUEST_VERSION,ASSEMBLY_VERSION,BUILDER_VERSION,OBSERVED_BUILDER_VERSION,EXPORTER_VERSION,DEFAULT_PROFILE,
+import { UI_PREFIX,SOURCE_VERSION,BUILD_REQUEST_VERSION,ASSEMBLY_VERSION,BUILDER_VERSION,OBSERVED_BUILDER_VERSION,ENVIRONMENT_BUILDER_VERSION,EXPORTER_VERSION,DEFAULT_PROFILE,
     authenticate,validateProfile,json,safeFailure,errorCode,log } from './protocol';
 import type { UiBundleEnv } from './env';
 import { Repository } from './storage/repository';
 import { consumeBuilds,recoverBuilds,requestBuild,readEnvelope } from './services/buildService';
 import { SourceClient } from './services/sourceClient';
-import { PAGE_EXPORTER_VERSION,PAGE_OBSERVED_EXPORTER_VERSION } from './contracts/pageSource';
+import { PAGE_EXPORTER_VERSION,PAGE_OBSERVED_EXPORTER_VERSION,PAGE_ENVIRONMENT_EXPORTER_VERSION } from './contracts/pageSource';
 
 // Public operator mount; internal Service Binding routes remain unchanged.
 // Authenticate the ORIGINAL request URL so the signature binds the actual wire path.
@@ -21,8 +21,8 @@ export async function route(request:Request,env:UiBundleEnv):Promise<Response> {
     if(op==='capabilities' && !isPublic) {
         await authenticate(request,env.UI_BUNDLE_SOURCE_SECRET,'source');await repo.ready();await env.UI_BUNDLES.head('_qagent_ui_bundle/readiness');
         return json({status:'ok',sourceVersion:SOURCE_VERSION,buildRequestVersion:BUILD_REQUEST_VERSION,assemblyVersion:ASSEMBLY_VERSION,builderVersion:BUILDER_VERSION,
-            supportedSourceExporters:[EXPORTER_VERSION,PAGE_EXPORTER_VERSION,PAGE_OBSERVED_EXPORTER_VERSION],
-            supportedBuilderVersions:[BUILDER_VERSION,OBSERVED_BUILDER_VERSION],observedEvidenceVersion:'qagent.ui-page-evidence.v2',
+            supportedSourceExporters:[EXPORTER_VERSION,PAGE_EXPORTER_VERSION,PAGE_OBSERVED_EXPORTER_VERSION,PAGE_ENVIRONMENT_EXPORTER_VERSION],
+            supportedBuilderVersions:[BUILDER_VERSION,OBSERVED_BUILDER_VERSION,ENVIRONMENT_BUILDER_VERSION],observedEvidenceVersion:'qagent.ui-page-evidence.v2',
             ready:env.UI_BUNDLE_BUILD_ENABLED!=='false'&&!!env.OBSERVATION_SERVICE&&!!env.UI_BUNDLE_BUILD_QUEUE,executionSupported:false});
     }
     if(!['build','list','read','artifact','inspect','revoke','build-status'].includes(op))return json({status:'error',code:'UI_BUNDLE_ROUTE_NOT_FOUND'},404);

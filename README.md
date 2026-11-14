@@ -20,6 +20,11 @@ determinísticas de fixtures de negócio. A qualificação separa integridade, d
 mocks, referência estrutural/visual e limitações de execução. Ver [contrato e usos](docs/page-copy-observed.md).
 O conteúdo capturado não é executado. Não há Runner, teste aprovado nem asserção de negócio gerada.
 
+O perfil r2 `ENVIRONMENT_MANAGED` usa exporter próprio e builder v4, preserva dados de teste sem
+redação/máscara e registra essa responsabilidade na qualificação. Gateway admite esse perfil
+somente para `FULL_TEST` em ambiente persistido `DEV`/`STG`. O ramo sanitizado r1 mantém builder v3
+e os mesmos hashes; captura v1 e PC.2 continuam com suas identidades anteriores.
+
 ## Validação
 
 ```bash

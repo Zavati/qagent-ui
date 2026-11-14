@@ -1,4 +1,4 @@
-import { PAGE_SOURCE_REF_VERSION, PAGE_EXPORTER_VERSION, PAGE_OBSERVED_EXPORTER_VERSION, isPageExporter } from './contracts/pageSource';
+import { PAGE_SOURCE_REF_VERSION, PAGE_EXPORTER_VERSION, PAGE_OBSERVED_EXPORTER_VERSION, PAGE_ENVIRONMENT_EXPORTER_VERSION, isPageExporter } from './contracts/pageSource';
 /** Shared with Observation. Artifact and event contracts are the unchanged A.2 contracts. */
 import { canonicalJson, digestJson, sha256, fail, readBytes, decodeJson, UiError } from './contracts/canonical';
 import { id, hash, object, validateScope, validateCaptureStart, validateCaptureComplete, validateArtifactInput,
@@ -11,7 +11,8 @@ export const ASSEMBLY_VERSION = 'qagent.ui-bundle-assembly.v1';
 export const EXPORTER_VERSION = 'qagent_ui_source_v1';
 export const BUILDER_VERSION = 'qagent_ui_bundle_builder_v2';
 export const OBSERVED_BUILDER_VERSION = 'qagent_ui_bundle_builder_v3';
-export function builderVersionForSource(source:SourceRef):string{return source.exporterVersion===PAGE_OBSERVED_EXPORTER_VERSION?OBSERVED_BUILDER_VERSION:BUILDER_VERSION;}
+export const ENVIRONMENT_BUILDER_VERSION = 'qagent_ui_bundle_builder_v4';
+export function builderVersionForSource(source:SourceRef):string{return source.exporterVersion===PAGE_ENVIRONMENT_EXPORTER_VERSION?ENVIRONMENT_BUILDER_VERSION:source.exporterVersion===PAGE_OBSERVED_EXPORTER_VERSION?OBSERVED_BUILDER_VERSION:BUILDER_VERSION;}
 export const LEGACY_BUILDER_VERSION = 'qagent_ui_bundle_builder_v1';
 export const PROFILE_VERSION = 'qagent.ui-assembly-profile.v1';
 export const MATCH_VERSION = 'qagent_ui_exact_request_v1';
@@ -25,7 +26,7 @@ export const UI_PREFIX = '/internal/ui/v1/';
 
 export interface SourceRef {
     contractVersion: typeof SOURCE_REF_VERSION | typeof PAGE_SOURCE_REF_VERSION;
-    exporterVersion: typeof EXPORTER_VERSION | typeof PAGE_EXPORTER_VERSION | typeof PAGE_OBSERVED_EXPORTER_VERSION;
+    exporterVersion: typeof EXPORTER_VERSION | typeof PAGE_EXPORTER_VERSION | typeof PAGE_OBSERVED_EXPORTER_VERSION | typeof PAGE_ENVIRONMENT_EXPORTER_VERSION;
     scope: Scope;
     captureId: string;
     sourceRevision: string;
@@ -123,7 +124,7 @@ export async function identity(source: SourceRef,profile: AssemblyProfile) { ret
 export async function messageBuilderVersion(message:Pick<BuildMessage,'source'|'profile'|'buildId'>):Promise<string|null> {
     const expected=builderVersionForSource(message.source);
     if(message.buildId===(await identityForBuilder(message.source,message.profile,expected)).buildId)return expected;
-    if(message.source.exporterVersion!==PAGE_OBSERVED_EXPORTER_VERSION&&message.buildId===(await identityForBuilder(message.source,message.profile,LEGACY_BUILDER_VERSION)).buildId)return LEGACY_BUILDER_VERSION;
+    if(message.source.exporterVersion!==PAGE_OBSERVED_EXPORTER_VERSION&&message.source.exporterVersion!==PAGE_ENVIRONMENT_EXPORTER_VERSION&&message.buildId===(await identityForBuilder(message.source,message.profile,LEGACY_BUILDER_VERSION)).buildId)return LEGACY_BUILDER_VERSION;
     return null;
 }
 export async function makeMessage(source:SourceRef,profile:AssemblyProfile,secret:string|undefined):Promise<BuildMessage> {
@@ -158,7 +159,7 @@ export async function authenticate(request:Request,secret:string|undefined,princ
 }
 export function json(value:unknown,status=200):Response { return new Response(JSON.stringify(value),{status,headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}}); }
 export function safeFailure(error:unknown):Response { return json({status:'error',code:errorCode(error)},error instanceof UiError?error.status:503); }
-export function log(event:string,fields:Record<string,unknown>={}):void { console.info(JSON.stringify({t:'qagent_ui_bundle',event,...fields})); }
+export function log(event:string,fields:Record<string,unknown>={}):void { console.info(JSON.stringify({t:'qagent_ui_bundle',classification:'UNCLASSIFIED',event,...fields})); }
 export async function limitedResponse(response:Response,max:number):Promise<Uint8Array> {
     const length=response.headers.get('content-length');
     if(length && (!/^\d+$/.test(length) || Number(length)>max)) fail('UI_BUNDLE_UPSTREAM_TOO_LARGE',413);

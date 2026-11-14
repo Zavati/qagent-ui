@@ -11,16 +11,35 @@ Não cria tabela, fila ou domínio novo.
 | --- | --- | --- | --- |
 | Captura v1 | `qagent_ui_source_v1` | `qagent_ui_bundle_builder_v2` | Contrato histórico de assembly |
 | PAGE-COPY sintético v2 | `qagent_ui_page_source_v2` | `qagent_ui_bundle_builder_v2` | `qagent.ui-page-evidence.v1` |
-| PAGE-COPY observado v2 | `qagent_ui_page_observed_source_v2` | `qagent_ui_bundle_builder_v3` | `qagent.ui-page-evidence.v2` |
+| PAGE-COPY observado sanitizado v2 (r1) | `qagent_ui_page_observed_source_v2` | `qagent_ui_bundle_builder_v3` | `qagent.ui-page-evidence.v2` |
+| PAGE-COPY com dados geridos pelo ambiente v2 (r2) | `qagent_ui_page_environment_source_v2` | `qagent_ui_bundle_builder_v4` | `qagent.ui-page-evidence.v2` |
 
 O contrato da referência paginada permanece `qagent.ui-bundle-source-ref.v2`. O exporter observado
 é um discriminante explícito e precisa corresponder ao `dataOrigin` da captura. A revisão observada
-de ingresso é `08.2-PC.3.r1`, com política `qagent.ui-page-observed.v1` e `FULL_TEST` autorizado.
+de ingresso sanitizado é `08.2-PC.3.r1`, com política `qagent.ui-page-observed.v1` e `FULL_TEST` autorizado.
 O número da versão do pacote não substitui nenhum desses contratos.
 
-`builderVersionForSource` escolhe v3 somente para o exporter observado. O algoritmo de identidade
+`builderVersionForSource` escolhe v3 para o exporter sanitizado e v4 para o exporter do ambiente. O algoritmo de identidade
 e os builders históricos continuam preservados. A entrega não reescreve bundles existentes nem
 reclassifica os dados históricos no banco.
+
+### Perfil r2 gerido pelo ambiente
+
+O Gateway autoriza `08.2-PC.3.r2` para captura somente quando o tipo persistido do ambiente é
+`DEV` ou `STG` e a política central já é `FULL_TEST`. O sinal assinado é
+`capturePolicy.dataProtection=ENVIRONMENT_MANAGED`, incluído no hash canônico existente.
+Não há novo checkbox nem campo de autoridade fornecido pelo cliente.
+
+A origem é `OBSERVED_ENVIRONMENT_MANAGED`; a política dos artefatos é
+`qagent.ui-page-environment-managed.v1`. O ambiente responde pelo preparo dos dados de teste.
+O pipeline preserva valores, headers, textos e pixels desse perfil sem redação de dados pessoais
+ou máscara de screenshot. Limites, estrutura, hashes, referência ao mesmo documento/captura,
+autorização, escopo e prova de cache continuam obrigatórios. `transformations=[]` não declara
+uma sanitização que não ocorreu; screenshot r2 não contém uma política de máscara fictícia.
+
+Corpos HTTP de HTML e JavaScript permanecem bytes passivos de arquivo, acessíveis como anexo
+autenticado. `DOCUMENT_HTML` e `RENDERED_HTML` continuam representações serializadas inertes,
+com conteúdo ativo removido pelo produtor. Nenhum desses artefatos é executado pelo consumidor.
 
 ## Verificação antes de persistir
 
@@ -29,11 +48,16 @@ sequência persistida, hashes de eventos e cadeia de eventos. As referências di
 precisam ter tipo correto, descritor FINALIZED, hash e tamanho correspondentes aos bytes reais.
 Descritores sintéticos não são admitidos dentro da fonte observada.
 
-Para o ramo observado, as mesmas funções puras de Observation verificam formato e privacidade
+Para o ramo sanitizado r1, as mesmas funções puras de Observation verificam formato e privacidade
 dos artefatos, política de headers e política de screenshot. O PNG é decodificado e a máscara é
 conferida novamente. HTML exige o marcador de transformação do produtor e passa por recusa de
 conteúdo ativo/privado; continua apenas como anexo. Nenhum HTML, JavaScript ou URL é executado
 ou buscado durante essa verificação.
+
+No perfil r2, os validadores recebem o modo explícito do descritor; filtros de dados não são
+aplicados. PNG continua sujeito a assinatura, CRC, estrutura, limites e decodificação, sem inspeção
+de máscara. O leitor recusa mistura entre origem, política e exporter e qualquer declaração de
+redação em um artefato r2. A aprovação estrutural não declara que os dados do ambiente são seguros.
 
 Os manifestos de recursos passam pelo mesmo validador estrito de projeção. Além da forma, o leitor
 confere a associação com os eventos INTERACTION e os estados: documento, request, sequência,
@@ -67,6 +91,15 @@ headers de negócio. O contexto inclui documento, navegação, frame e step. O �
 segue o `requestSequence` de despacho dentro desse contexto; sequência de persistência não é
 usada como substituto do despacho observado.
 
+Quando presente no r2, `request.observedHeadersRef` conserva a lista integral de headers observados,
+com seu hash em `observedHeadersSha256`. `businessHeadersRef` aponta para essa mesma lista sem
+`if-none-match` e `if-modified-since`; essa referência normalizada participa da correspondência e
+da chave de cache. O consumidor confere a congruência entre as duas listas, incluindo Cookie e
+Authorization. Os headers condicionais permanecem arquivados e não tornam diferentes a
+representação 200 e sua revalidação 304. A referência integral também aparece em
+`pageIndex.interactions`, com integridade e tipo obrigatórios. Recibos sem esse campo conservam
+o formato anterior.
+
 Cada fixture disponível exige consumo máximo 1; um limite incompatível permanece registrado e
 torna a fixture indisponível. Não há reutilização após esgotar,
 resposta inventada nem fallback para o backend real. Requests não correspondidos ou fixtures
@@ -84,8 +117,10 @@ validada novamente no consumidor. Os headers da representação 200 são referen
 fixture; os headers realmente observados no 304 ficam em `networkHeadersRef`.
 
 A verificação do consumidor cobre as referências e hashes transmitidos. As verificações privadas
-do produtor sobre headers efetivos, ETag e condições de cache não expõem Cookie/Authorization
-no contrato. Cache sem prova permanece indisponível; não se transforma em origem NETWORK.
+do produtor sobre headers efetivos, ETag e condições de cache mantêm a impressão privada fora
+da prova pública. No perfil r2, os próprios headers capturados podem conter valores de teste sem
+redação e continuam nos artefatos referenciados. A chave pública de cache inclui a política da
+origem; prova r1 não é aceita para r2. Cache sem prova permanece indisponível; não se transforma em origem NETWORK.
 
 ## Qualificação por uso
 
@@ -106,6 +141,11 @@ Estado instável permanece registrado como instável e não se torna baseline es
 O recibo observado mantém `overall=NEEDS_ATTENTION`, `eligibleModes=[]`, `uiTestPassed=false`
 e `apiEvidencePromoted=false`. Uma qualificação READY em uso específico não aprova um teste.
 
+Somente os novos recibos r2 acrescentam `dataProtection=ENVIRONMENT_MANAGED`,
+`dataOrigin=OBSERVED_ENVIRONMENT_MANAGED`, `privacyPolicyVersion`, `dataRedactionApplied=false`
+e `dataResponsibility=CAPTURE_ENVIRONMENT`. A ausência de redação de dados não implica ausência
+de serialização inerte de HTML. Recibos r1 mantêm seus campos e hashes históricos.
+
 ## Limites e validação
 
 Continuam os limites declarados da fonte/artifacts, de 16 MiB por manifesto derivado e de 100.000
@@ -119,3 +159,7 @@ escopo/origem, inspeção de JSON/headers/DOM/HTML/PNG e contradições entre re
 Também executa o consumidor real com SQLite e transportes locais de R2/Observation, incluindo
 ACK, pins, idempotência e recuperação de indisponibilidade. Isso não substitui captura nova e smoke
 no ambiente implantado, nem comprova execução de UI.
+
+As regressões r2 cobrem preservação de valores/headers/query/DOM/form/action, HTML HTTP como
+anexo, pixels sem máscara, integridade de PNG, rejeição de mistura de perfis, cache por origem,
+identidade v4 e vetores de source/build/manifest calculados na cópia fix1 para garantir compatibilidade r1.

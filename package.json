@@ -1,6 +1,6 @@
 {
   "name": "qagent-ui",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "QAgent UI domain: immutable replay bundle assembly and qualification",
   "type": "module",
   "scripts": {

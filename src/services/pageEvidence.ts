@@ -1,27 +1,30 @@
 /** Immutable page receipts: historical PC.2 and observed PC.3 share the source reader.
  * Observed receipts add verified fixture references and per-use qualification, never execution. */
 import { CANONICAL_VERSION,canonicalJson,digestJson,sha256,decodeJson,fail } from '../contracts/canonical';
-import { object,id,type UiEvent } from '../contracts/uiCapture';
-import { assertPageEventRefTypes,validateEventsAny,validatePageArtifact,pageEventRefs,validateResourceManifest,PAGE_CONTRACTS,PAGE_LIMITS,type PageArtifactInput } from '../contracts/uiPageCopy';
+import { object,id,isEnvironmentManagedPolicy,type UiEvent } from '../contracts/uiCapture';
+import { assertPageEventRefTypes,validateEventsAny,validatePageArtifact,pageEventRefs,validateResourceManifest,isObservedPageOrigin,PAGE_CONTRACTS,PAGE_LIMITS,type PageArtifactInput } from '../contracts/uiPageCopy';
 import { validatePageRoot,type PageSourceRoot } from '../contracts/pageSource';
 import { identity,BUILDER_VERSION,builderVersionForSource,type SourceRef,type AssemblyProfile } from '../protocol';
 import { observedPageIndex } from './pageFixtures';
 import { inspectPageArtifactBytes } from '../contracts/pageArtifactInspection';
-import { inspectMaskedPng } from '../contracts/pngPrivacy';
+import { assertEnvironmentRequestHeaders } from '../contracts/pageObservedEvidence';
+import { inspectMaskedPng,inspectUnmaskedPng } from '../contracts/pngPrivacy';
 import { validateProjectionChunk } from '../pages/pageValidation';
 import { PAGE_PROJECTION_VERSION } from '../pages/pageTypes';
 export async function assemblePageEvidence(root:PageSourceRoot,ref:SourceRef,profile:AssemblyProfile,
  readPart:(index:number)=>Promise<any[]>,readArtifact:(id:string)=>Promise<Uint8Array>):Promise<{envelope:Record<string,any>;artifactIds:string[]}> {
  await validatePageRoot(root,ref);
- const observedSource=root.capture.descriptor.dataOrigin==='OBSERVED_SANITIZED';
+ const observedSource=isObservedPageOrigin(root.capture.descriptor.dataOrigin);
+ const environmentManaged=isEnvironmentManagedPolicy(root.capture.descriptor.capturePolicy);
+ const privacyMode=environmentManaged?'ENVIRONMENT_MANAGED':'FULL_TEST';
  const descriptors=new Map<string,{descriptor:PageArtifactInput;status:string}>(),roots=new Set<string>();
- const observedEvents:UiEvent[]=[],documentArtifacts=new Map<string,string>();
+ const observedEvents:UiEvent[]=[],documentArtifacts=new Map<string,string>(),headerArtifacts=new Map<string,[string,string][]>();
  let count=0,chain='0'.repeat(64),actions=0,interactions=0,checkpoints=0;const observed=new Set<number>(),requestOrder=new Set<number>(),eventIds=new Set<string>(),issues=new Set<string>();
  for(let index=0;index<root.parts.length;index++){
   const part=root.parts[index],items=await readPart(index);
   if(part.kind==='ARTIFACTS')for(const item of items){object(item,['artifactId','descriptor','status']);id(item.artifactId);if(descriptors.has(item.artifactId)||!['PENDING','FINALIZED'].includes(item.status))fail('UI_PAGE_SOURCE_INVALID');const descriptor=validatePageArtifact(item.descriptor);if(descriptor.privacy.dataOrigin!==root.capture.descriptor.dataOrigin)fail('UI_PAGE_SOURCE_ORIGIN_MISMATCH',409);descriptors.set(item.artifactId,{descriptor,status:item.status});}
   else {
-   const input=validateEventsAny({contractVersion:PAGE_CONTRACTS.events,operationId:'op_page_reader',events:items});
+   const input=validateEventsAny({contractVersion:PAGE_CONTRACTS.events,operationId:'op_page_reader',events:items},privacyMode);
    for(const event of input.events){assertPageEventRefTypes(event,id=>descriptors.get(id)?.status==='FINALIZED'?descriptors.get(id)?.descriptor:undefined);const {contentHash,...content}=event;if(event.sequence!==count++||eventIds.has(event.eventId)||await digestJson(content)!==contentHash)fail('UI_BUNDLE_EVENT_INTEGRITY_FAILED',409);eventIds.add(event.eventId);chain=await digestJson([chain,event.sequence,contentHash]);pageEventRefs(event).forEach(x=>roots.add(x));const p:any=event.payload;if(observedSource)observedEvents.push(event);
     if(event.kind!=='GAP'){if(observed.has(p.observedSequence))fail('UI_PAGE_OBSERVED_ORDER_CONFLICT',409);observed.add(p.observedSequence);}
     if(event.kind==='ACTION')actions++;
@@ -36,8 +39,12 @@ export async function assemblePageEvidence(root:PageSourceRoot,ref:SourceRef,pro
  for(const artifactId of root.reachableArtifactIds){const item=descriptors.get(artifactId);if(!item||item.status!=='FINALIZED')fail('UI_PAGE_ARTIFACT_REF_UNAVAILABLE',409);const d=item.descriptor,bytes=await readArtifact(artifactId);
   if(bytes.length!==d.byteLength||await sha256(bytes)!==d.sha256)fail('UI_BUNDLE_ARTIFACT_HASH_MISMATCH',409);
   if(observedSource){
-   inspectPageArtifactBytes(d,bytes,'FULL_TEST',root.capture.descriptor.capturePolicy);
-   if(d.kind==='SCREENSHOT_PNG')await inspectMaskedPng(bytes,d.privacy.visual!);
+   inspectPageArtifactBytes(d,bytes,privacyMode,root.capture.descriptor.capturePolicy);
+   if(d.kind==='SCREENSHOT_PNG'){
+    if(environmentManaged)await inspectUnmaskedPng(bytes);
+    else await inspectMaskedPng(bytes,d.privacy.visual!);
+   }
+   if(environmentManaged&&d.kind==='HEADERS_JSON')headerArtifacts.set(artifactId,decodeJson(bytes) as [string,string][]);
   }
   if(d.kind==='RESOURCE_MANIFEST_JSON'){
    const manifest=validateResourceManifest(decodeJson(bytes));
@@ -50,6 +57,7 @@ export async function assemblePageEvidence(root:PageSourceRoot,ref:SourceRef,pro
   if(d.completeness!=='COMPLETE')issues.add('UI_PAGE_ARTIFACT_TRUNCATED');
   artifactRefs.push({artifactId,kind:d.kind,sha256:d.sha256,byteLength:d.byteLength,contentType:d.contentType,representation:d.representation,storedEncoding:d.storedEncoding,completeness:d.completeness,privacyPolicyVersion:d.privacy.policyVersion,dataOrigin:d.privacy.dataOrigin});
  }
+ if(environmentManaged)for(const event of observedEvents)if(event.kind==='INTERACTION')assertEnvironmentRequestHeaders((event.payload as any).request,id=>headerArtifacts.get(id));
  // Independently recompute the transitive closure; do not trust a root's reachability claim alone.
  const verified=new Set<string>(),active=new Set<string>();
  function walk(id:string,depth:number):void {

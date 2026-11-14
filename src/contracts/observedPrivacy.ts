@@ -3,8 +3,9 @@ import { UI_LIMITS, type ArtifactInput } from './uiCapture';
 export const SENSITIVE_KEY = /(?:authorization|password|passwd|privatekey|clientsecret|apikey|csrftoken|accesstoken|refreshtoken|idtoken|sessionid|cookie|secret|^pwd$|^token$|^tx$|^nonce$|^state$|storage)/i;
 export const PERSONAL_KEY = /(?:email|phone|mobile|firstname|lastname|fullname|givenname|familyname|address|birth|ssn|taxid|passport)/i;
 export const keyName = (s: string) => s.replace(/[^a-z0-9]/gi, '');
-export type ObservedPrivacyMode = 'PROTECTED' | 'FULL_TEST';
+export type ObservedPrivacyMode = 'PROTECTED' | 'FULL_TEST' | 'ENVIRONMENT_MANAGED';
 export function unsafeText(s: string, mode: ObservedPrivacyMode = 'PROTECTED'): boolean {
+    if(mode==='ENVIRONMENT_MANAGED')return false;
     let x = s;
     try {
         x = decodeURIComponent(s);
@@ -24,6 +25,7 @@ export function checkedUrl(raw: string, mode: ObservedPrivacyMode = 'PROTECTED')
     }
     if (!['https:', 'http:'].includes(u.protocol) || u.username || u.password || raw.length > 4096 || unsafeText(u.pathname, mode))
         fail('UI_URL_PRIVACY_OMITTED');
+    if(mode==='ENVIRONMENT_MANAGED')return u;
     for (const [k, v] of u.searchParams)
         if (SENSITIVE_KEY.test(keyName(k)) || (mode === 'PROTECTED' && PERSONAL_KEY.test(keyName(k))) || unsafeText(k, mode) || unsafeText(v, mode))
             fail('UI_URL_PRIVACY_OMITTED');
@@ -32,8 +34,8 @@ export function checkedUrl(raw: string, mode: ObservedPrivacyMode = 'PROTECTED')
         fail('UI_URL_PRIVACY_OMITTED');
     return u;
 }
-export function networkPathAllowed(path: string, paths: string[]): boolean {
-    if (/(?:^|\/)(?:login|signin|signout|logout|auth|oauth2?|sso|selfasserted|token)(?:\/|$)/i.test(path))
+export function networkPathAllowed(path: string, paths: string[],mode:ObservedPrivacyMode='PROTECTED'): boolean {
+    if (mode!=='ENVIRONMENT_MANAGED'&&/(?:^|\/)(?:login|signin|signout|logout|auth|oauth2?|sso|selfasserted|token)(?:\/|$)/i.test(path))
         return false;
     return paths.some(prefix => path === prefix || path.startsWith(prefix.endsWith('/') ? prefix : prefix + '/'));
 }
@@ -50,6 +52,14 @@ export function observedHeaders(raw: unknown, extraNames: string[] = [], mode: O
     ][] = [];
     for (const [name, value] of Object.entries(raw)) {
         const k = name.toLowerCase();
+        if(mode==='ENVIRONMENT_MANAGED'){
+            if(typeof value!=='string'||value.includes('\r'))fail('UI_HEADER_PRIVACY_OMITTED');
+            if(!/^(?:[!#$%&'*+.^_`|~0-9a-z-]{1,80}|:(?:authority|method|path|scheme|status))$/.test(k)||value.length>256*2049)fail('UI_HEADER_FORMAT_INVALID');
+            // CDP joins repeated header fields with LF. Preserve each value as a
+            // separate pair; never treat the separator as part of a field value.
+            for(const part of value.split('\n')){if(part.length>2048||out.length>=256)fail('UI_HEADER_FORMAT_INVALID');out.push([k,part]);}
+            continue;
+        }
         if (!SAFE_HEADERS.includes(k) && !extraNames.includes(k))
             continue;
         if (SENSITIVE_KEY.test(keyName(k)))
@@ -59,6 +69,11 @@ export function observedHeaders(raw: unknown, extraNames: string[] = [], mode: O
         out.push([k, value]);
     }
     return out.sort((a, b) => a[0].localeCompare(b[0]));
+}
+/** Revalidation conditions do not select a representation. Every other captured
+ * header, including credentials and Vary inputs, stays in the variant evidence. */
+export function environmentVariantHeaders(pairs:readonly [string,string][]):[string,string][] {
+    return pairs.filter(([name])=>!['if-none-match','if-modified-since'].includes(name.toLowerCase()));
 }
 /** Only approved test-data paths enter here. Heuristics supplement, not replace that scope. */
 export async function sanitizeObservedJson(raw: string, salt: string, mode: ObservedPrivacyMode = 'PROTECTED'): Promise<{
@@ -82,7 +97,7 @@ export async function sanitizeObservedJson(raw: string, salt: string, mode: Obse
         if (++visited > 50000) fail('UI_JSON_NODE_LIMIT');
         if (depth > 40)
             fail('UI_JSON_DEPTH_LIMIT');
-        if (SENSITIVE_KEY.test(keyName(key))) {
+        if (mode!=='ENVIRONMENT_MANAGED'&&SENSITIVE_KEY.test(keyName(key))) {
             mark('REDACTED', path);
             return '[REDACTED]';
         }
@@ -127,7 +142,7 @@ export function assertObservedJson(value: unknown, mode: ObservedPrivacyMode = '
         if (++visited > 50000) fail('UI_JSON_NODE_LIMIT', 422);
         if (depth > 48)
             fail('UI_PRIVACY_REJECTED', 422);
-        if ((SENSITIVE_KEY.test(keyName(key)) || (mode === 'PROTECTED' && PERSONAL_KEY.test(keyName(key)))) && v !== null && v !== '[REDACTED]' && v !== '[OMITTED]' && !(typeof v === 'string' && /^ui_[a-f0-9]{20}$/.test(v)))
+        if (((mode!=='ENVIRONMENT_MANAGED'&&SENSITIVE_KEY.test(keyName(key))) || (mode === 'PROTECTED' && PERSONAL_KEY.test(keyName(key)))) && v !== null && v !== '[REDACTED]' && v !== '[OMITTED]' && !(typeof v === 'string' && /^ui_[a-f0-9]{20}$/.test(v)))
             fail('UI_PRIVACY_REJECTED', 422);
         if (typeof v === 'string' && unsafeText(v, mode))
             fail('UI_PRIVACY_REJECTED', 422);

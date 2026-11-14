@@ -8,13 +8,15 @@ const { assemblePageEvidence } = require(path.join(build, 'src/services/pageEvid
 const support = require('./support.cjs');
 
 async function fixture(options = {}) {
+  const dataOrigin = options.environmentManaged ? pc.PAGE_ENVIRONMENT_ORIGIN : 'OBSERVED_SANITIZED';
+  const exporter = options.environmentManaged ? source.PAGE_ENVIRONMENT_EXPORTER_VERSION : source.PAGE_OBSERVED_EXPORTER_VERSION;
   const scope = { organizationId: 'org_observed', projectId: 'prj_observed', environmentId: 'env_test' };
   const captureId = 'uic_observed_sample', doc = 'doc_observed', nav = 'nav_observed';
   const artifacts = [], bytes = new Map(), events = [];
-  const policy = { version: 'qagent.ui-capture-policy.v1', mode: 'FULL_TEST', acknowledgeTestData: true,
+  const policy = { version: 'qagent.ui-capture-policy.v1', mode: 'FULL_TEST', ...(options.environmentManaged ? { dataProtection: 'ENVIRONMENT_MANAGED' } : {}), acknowledgeTestData: true,
     networkPaths: ['/'], businessHeaderNames: ['accept'], publicTextSelectors: ['main'], valueSelectors: [],
     screenshotSelectors: [], maskSelectors: [], startMode: 'NEXT_NAVIGATION' };
-  const descriptor = { contractVersion: pc.PAGE_CONTRACTS.capture, operationId: 'op_start', dataOrigin: 'OBSERVED_SANITIZED',
+  const descriptor = { contractVersion: pc.PAGE_CONTRACTS.capture, operationId: 'op_start', dataOrigin,
     documentId: doc, entryUrl: 'https://app.example.test/items', sourceBuildRef: options.sourceBuildRef ?? null,
     issues: options.sourceBuildRef ? [] : ['SOURCE_BUILD_UNKNOWN'], capturePolicy: policy,
     limitsSnapshot: { artifactBytes: 16777216, artifactsPerCapture: 512, captureArtifactBytes: 268435456 } };
@@ -27,7 +29,7 @@ async function fixture(options = {}) {
       contentType: mime, originalContentType: mime, storedEncoding: 'identity', representation: binary ? 'BINARY' : mime === 'application/json' ? 'STRUCTURED_JSON' : 'UTF8_TEXT',
       captureMethod: ['HTTP_REQUEST_BODY', 'HTTP_RESPONSE_BODY', 'HEADERS_JSON'].includes(kind) ? 'NETWORK_BODY' : kind === 'SCREENSHOT_PNG' ? 'SCREENSHOT' : kind === 'RESOURCE_MANIFEST_JSON' ? 'MANIFEST' : 'DOM_SNAPSHOT',
       completeness: 'COMPLETE', byteLength: data.length, sha256: await c.sha256(new Uint8Array(data)),
-      privacy: { policyVersion: pc.PAGE_OBSERVED_PRIVACY, dataOrigin: 'OBSERVED_SANITIZED', transformations: [] } };
+      privacy: { policyVersion: pc.pagePrivacyForOrigin(dataOrigin), dataOrigin, transformations: [] } };
     artifacts.push({ artifactId, descriptor: d, status: 'FINALIZED' }); bytes.set(artifactId, data);
     return { artifactId, descriptor: d, bytes: data };
   }
@@ -90,12 +92,12 @@ async function fixture(options = {}) {
     const partRefs = [];
     for (const p of parts) partRefs.push({ kind: p.kind, index: p.index, sha256: await c.digestJson(p),
       byteLength: Buffer.byteLength(c.canonicalJson(p)), count: p.items.length });
-    root = { contractVersion: source.PAGE_SOURCE_VERSION, exporterVersion: source.PAGE_OBSERVED_EXPORTER_VERSION, scope, captureId,
+    root = { contractVersion: source.PAGE_SOURCE_VERSION, exporterVersion: exporter, scope, captureId,
       sourceRevision: revision, capture: { descriptor, completion, status: completion.outcome, createdAt: 1700000000000,
         completedAt: 1700000010000, origins: ['https://app.example.test'] }, ingestion: { expectedEvents: events.length,
         lastSequence: events.length - 1, eventChainHash: chain }, parts: partRefs, reachableArtifactIds: [...reachable].sort(),
       counts: { events: events.length, artifacts: artifacts.length, referencedArtifacts: reachable.size } };
-    ref = { contractVersion: source.PAGE_SOURCE_REF_VERSION, exporterVersion: source.PAGE_OBSERVED_EXPORTER_VERSION,
+    ref = { contractVersion: source.PAGE_SOURCE_REF_VERSION, exporterVersion: exporter,
       scope, captureId, sourceRevision: revision, sourceHash: await c.digestJson(root) };
     return ref;
   }
@@ -108,7 +110,7 @@ async function fixture(options = {}) {
       const p = structuredClone(network.payload); p.entryId = 'entry_cached'; p.requestId = 'request_cached'; p.resourceId = 'res_cached';
       p.observedSequence = events.length; p.requestSequence = 1; p.relativeTimeUs = 40000; p.relativeTimeMs = 40; p.startedOffsetUs = 40000; p.finishedOffsetUs = 41000;
       p.response = { ...p.response, status: 304, networkStatus: 304, replayStatus: 200, bodySource: 'CACHE',
-        cacheEvidence: { representationId: network.eventId, bodySha256: p.response.bodyHash, matchKeySha256: await pc.pageCacheMatchKey(captureId, p) } };
+        cacheEvidence: { representationId: network.eventId, bodySha256: p.response.bodyHash, matchKeySha256: await pc.pageCacheMatchKey(captureId, p, dataOrigin) } };
       const e = add('INTERACTION', p, 'uie_cached'); await rehash(); return e;
     },
   };

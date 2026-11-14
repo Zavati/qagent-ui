@@ -1,8 +1,8 @@
 /** Derived observed evidence only. This module never fetches an application, evaluates captured
  * markup, synthesizes responses, executes a test, or changes its source/baseline. */
 import { canonicalJson, digestJson, fail } from '../contracts/canonical';
-import { type UiEvent } from '../contracts/uiCapture';
-import { PAGE_OBSERVED_PRIVACY, type PageArtifactInput, type ResourceManifest } from '../contracts/uiPageCopy';
+import { isEnvironmentManagedPolicy, type DataOrigin, type UiEvent } from '../contracts/uiCapture';
+import { pagePrivacyForOrigin, type PageArtifactInput, type ResourceManifest } from '../contracts/uiPageCopy';
 import { validateObservedPageEvidence } from '../contracts/pageObservedEvidence';
 import { type PageSourceRoot } from '../contracts/pageSource';
 import { type AssemblyProfile, type SourceRef } from '../protocol';
@@ -34,8 +34,8 @@ function insertSame(map: Map<string, Payload>, key: string, value: Payload, code
 
 /** A cache claim is not proof by itself. Independently bind the representation to a completed
  * NETWORK 200 interaction in this immutable capture, before the revalidation was dispatched. */
-export async function verifyObservedCacheEvidence(captureId: string, events: UiEvent[]): Promise<Map<string, UiEvent>> {
-  await validateObservedPageEvidence(captureId, events);
+export async function verifyObservedCacheEvidence(captureId: string, events: UiEvent[], dataOrigin: DataOrigin = 'OBSERVED_SANITIZED'): Promise<Map<string, UiEvent>> {
+  await validateObservedPageEvidence(captureId, events, dataOrigin);
   const byId = new Map(events.map(e => [e.eventId, e]));
   const sources = new Map<string, UiEvent>();
   for (const e of events) {
@@ -51,17 +51,19 @@ export async function verifyObservedCacheEvidence(captureId: string, events: UiE
 
 export async function observedPageIndex(input: ObservedPageInput): Promise<Record<string, any>> {
   const { root, ref, profile, events, descriptors, verified, manifests, documentArtifacts } = input;
+  const dataOrigin = root.capture.descriptor.dataOrigin;
+  const environmentManaged = isEnvironmentManagedPolicy(root.capture.descriptor.capturePolicy);
   const artifact = (artifactId: string | null): Payload | null => {
     if (artifactId === null) return null;
     const row = descriptors.get(artifactId);
     if (!row || row.status !== 'FINALIZED' || !verified.has(artifactId)) fail('UI_PAGE_ARTIFACT_REF_UNAVAILABLE', 409);
     const d = row.descriptor;
-    if (d.privacy.dataOrigin !== 'OBSERVED_SANITIZED' || d.privacy.policyVersion !== PAGE_OBSERVED_PRIVACY)
+    if (d.privacy.dataOrigin !== dataOrigin || d.privacy.policyVersion !== pagePrivacyForOrigin(dataOrigin))
       fail('UI_PAGE_SOURCE_ORIGIN_MISMATCH', 409);
     return { artifactId, kind: d.kind, sha256: d.sha256, byteLength: d.byteLength, contentType: d.contentType,
       representation: d.representation, completeness: d.completeness, transformations: d.privacy.transformations.length };
   };
-  const cacheSources = await verifyObservedCacheEvidence(root.captureId, events);
+  const cacheSources = await verifyObservedCacheEvidence(root.captureId, events, dataOrigin);
   const eventById = new Map(events.map(e => [e.eventId, e]));
   const documents = new Map<string, Payload>(), resources = new Map<string, Payload>(), links = new Map<string, Payload>();
   for (const m of manifests.values()) {
@@ -161,12 +163,15 @@ export async function observedPageIndex(input: ObservedPageInput): Promise<Recor
     const p = e.payload as Payload;
     if (!root.capture.origins.includes(p.request.origin)) fail('UI_PAGE_INTERACTION_SCOPE_MISMATCH', 409);
     const requestBody = artifact(p.request.bodyRef), requestHeaders = artifact(p.request.businessHeadersRef);
+    const hasObservedHeaders = Object.hasOwn(p.request, 'observedHeadersRef');
+    const observedHeaders = hasObservedHeaders ? artifact(p.request.observedHeadersRef) : null;
     const responseBody = artifact(p.response.bodyRef), networkHeaders = artifact(p.response.headersRef);
     const source = cacheSources.get(e.eventId), representation = source ? source.payload as Payload : p;
     const responseHeaders = source ? artifact(representation.response.headersRef) : networkHeaders;
     const request = { logicalServiceKey: p.logicalServiceKey, method: p.request.method, origin: p.request.origin,
       path: p.request.path, query: p.request.query, bodyRef: p.request.bodyRef, bodySha256: requestBody?.sha256 ?? null,
-      businessHeadersRef: p.request.businessHeadersRef, businessHeadersSha256: requestHeaders?.sha256 ?? null };
+      businessHeadersRef: p.request.businessHeadersRef, businessHeadersSha256: requestHeaders?.sha256 ?? null,
+      ...(hasObservedHeaders ? { observedHeadersRef: p.request.observedHeadersRef, observedHeadersSha256: observedHeaders?.sha256 ?? null } : {}) };
     const fingerprint = await digestJson({ service: p.logicalServiceKey, origin: request.origin, method: request.method,
       path: request.path, query: request.query, bodyHash: request.bodySha256, businessHeadersHash: request.businessHeadersSha256 });
     const matchingContext = { ...context(p), requestFingerprint: fingerprint };
@@ -246,6 +251,9 @@ export async function observedPageIndex(input: ObservedPageInput): Promise<Recor
       occurrence: 'OBSERVED_REQUEST_SEQUENCE_WITHIN_CONTEXT', unmatchedRequest: 'BLOCK', exhaustedFixture: 'BLOCK', liveBusinessFallback: false },
     applicationResources: { strategy: 'EXECUTE_TARGET_BUILD', observedCssJsAreFixtures: false, archiveExecutionAllowed: false },
     qualification: { overall: 'NEEDS_ATTENTION', dimensions,
+      ...(environmentManaged ? { dataProtection: 'ENVIRONMENT_MANAGED', dataOrigin,
+        privacyPolicyVersion: pagePrivacyForOrigin(dataOrigin), dataRedactionApplied: false,
+        dataResponsibility: 'CAPTURE_ENVIRONMENT' } : {}),
       uses: { archiveInspection: { status: 'READY', reasonCodes: [], meaning: 'REFERENCED_BYTES_VERIFIED_NOT_RENDERED' },
         fixtureMocks: dimensions.network, structuralReference: dimension(structural.length, stateList.length,
           structural.length ? [] : ['UI_PAGE_DOM_REFERENCE_MISSING']), visualReference: dimensions.visual,

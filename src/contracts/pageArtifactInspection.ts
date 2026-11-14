@@ -2,9 +2,9 @@
  * Format checks supplement the authorized FULL_TEST scope, never prove universal sanitization.
  * No execution, URL fetching, rewriting, or logging of captured bytes is permitted here. */
 import { decodeJson, fail } from './canonical';
-import { checkedUrl, SENSITIVE_KEY, keyName, SAFE_HEADERS } from './observedPrivacy';
+import { checkedUrl, SENSITIVE_KEY, keyName, SAFE_HEADERS, type ObservedPrivacyMode } from './observedPrivacy';
 import { object, id, validateCapturePolicy, type CapturePolicy } from './uiCapture';
-import { validateResourceManifest, type PageArtifactInput } from './uiPageCopy';
+import { validateResourceManifest, isEnvironmentManagedPolicy, PAGE_ENVIRONMENT_ORIGIN, type PageArtifactInput } from './uiPageCopy';
 
 function failFormat():never{return fail('UI_PAGE_ARTIFACT_FORMAT_INVALID',422);}
 function text(bytes:Uint8Array):string {try {const s=new TextDecoder('utf-8',{fatal:true}).decode(bytes);if(s.includes('\0'))failFormat();return s;}catch{return failFormat();}}
@@ -85,17 +85,36 @@ function inspectObservedHtml(descriptor:PageArtifactInput,html:string):void {
         let rest=open[2];while(rest){const attr=/^ ([a-z_:][a-z0-9_:.-]*)="([^"]*)"/.exec(rest);if(!attr)failFormat();guardAttribute(open[1],attr[1],attributeText(attr[2]));rest=rest.slice(attr[0].length);}
     }
 }
-export function inspectPageArtifactBytes(descriptor:PageArtifactInput,bytes:Uint8Array,mode:'FULL_TEST'|'PROTECTED'='PROTECTED',policy?:CapturePolicy):void {
-    const observed=descriptor.privacy.dataOrigin==='OBSERVED_SANITIZED';
+/** r2 retains private test data. This check only verifies the producer's inert
+ * DOM serialization; HTTP bodies remain passive, exact response/request bytes. */
+function inertAttribute(tag:string,name:string,value:string):void {
+    const key=name.toLowerCase();
+    if(key.startsWith('on')||key==='srcdoc'||tag.toLowerCase()==='meta'&&key==='http-equiv'&&value.trim().toLowerCase()==='refresh')fail('UI_PAGE_HTML_ACTIVE_CONTENT',422);
+    if(['href','src','action','poster','formaction','xlink:href'].includes(key))checkedUrl(value,'ENVIRONMENT_MANAGED');
+    if(key==='style'&&/url\s*\(\s*["']?(?:data|javascript|vbscript):/i.test(value))fail('UI_PAGE_HTML_ACTIVE_CONTENT',422);
+}
+function inspectInertHtml(html:string):void {
+    if(/<!--|<\?|<!\[|<![^d]/i.test(html))failFormat();
+    for(const m of html.matchAll(/<(script|noscript|iframe|object)\b[^>]*>/gi))if(!new RegExp('^\\s*</'+m[1]+'\\s*>','i').test(html.slice(m.index!+m[0].length)))fail('UI_PAGE_HTML_ACTIVE_CONTENT',422);
+    for(const m of html.matchAll(/<[^>]*>/g)){
+        if(/^<!DOCTYPE [a-z0-9_-]+>$/i.test(m[0])||/^<\/[a-z][a-z0-9:_.-]*>$/.test(m[0]))continue;
+        const open=/^<([a-z][a-z0-9:_.-]*)([\s\S]*?)>$/.exec(m[0]);if(!open)failFormat();
+        let rest=open[2];while(rest){const attr=/^ ([a-z_:][a-z0-9_:.-]*)="([^"]*)"/.exec(rest);if(!attr)failFormat();inertAttribute(open[1],attr[1],attributeText(attr[2]));rest=rest.slice(attr[0].length);}
+    }
+}
+export function inspectPageArtifactBytes(descriptor:PageArtifactInput,bytes:Uint8Array,mode:ObservedPrivacyMode='PROTECTED',policy?:CapturePolicy):void {
+    const observed=descriptor.privacy.dataOrigin==='OBSERVED_SANITIZED',environment=descriptor.privacy.dataOrigin===PAGE_ENVIRONMENT_ORIGIN;
+    if(environment&&(mode!=='ENVIRONMENT_MANAGED'||!isEnvironmentManagedPolicy(policy)))fail('UI_POLICY_PROFILE_MISMATCH',422);
     if(observed){if(mode!=='FULL_TEST'||!policy||validateCapturePolicy(policy).mode!=='FULL_TEST')fail('UI_PAGE_FULL_TEST_REQUIRED',422);}
     if(descriptor.representation==='BINARY'){if(observed&&descriptor.contentType==='application/octet-stream')fail('UI_PAGE_BINARY_UNSUPPORTED',415);magic(descriptor.contentType,bytes);if(observed)guardText(new TextDecoder().decode(bytes));return;}
-    const s=text(bytes);guardText(s);
+    const s=text(bytes);if(!environment)guardText(s);
     if(descriptor.representation==='UTF8_TEXT'){
         if(observed&&descriptor.contentType==='text/html')inspectObservedHtml(descriptor,s);
         else if(observed&&!['text/plain','text/css','text/javascript','application/javascript'].includes(descriptor.contentType))fail('UI_PAGE_ARTIFACT_FORMAT_INVALID',422);
+        if(environment&&['DOCUMENT_HTML','RENDERED_HTML'].includes(descriptor.kind))inspectInertHtml(s);
         return; // Always private archival bytes, never executable Console content.
     }
-    const value=decodeJson(bytes),body=observed&&['HTTP_REQUEST_BODY','HTTP_RESPONSE_BODY'].includes(descriptor.kind);guardJson(value,observed,body);
+    const value=decodeJson(bytes),body=observed&&['HTTP_REQUEST_BODY','HTTP_RESPONSE_BODY'].includes(descriptor.kind);if(!environment)guardJson(value,observed,body);
     if(body||observed&&descriptor.kind==='ACTION_VALUE_JSON')guardObservedBody(value);
     if(descriptor.kind==='RESOURCE_MANIFEST_JSON'){
         validateResourceManifest(value);return;
@@ -103,10 +122,11 @@ export function inspectPageArtifactBytes(descriptor:PageArtifactInput,bytes:Uint
     if(descriptor.kind==='DOM_SNAPSHOT_JSON'){
         const v=object(value,['contractVersion','documentId','nodes']);if(v.contractVersion!=='qagent.ui-dom-snapshot.v1'||!Array.isArray(v.nodes)||v.nodes.length>10000)failFormat();id(v.documentId);
         const nodes=new Set<string>(),opaqueNodes=new Set<string>();for(const n of v.nodes){object(n,['nodeId','parentId','nodeType','name','attributes','text']);id(n.nodeId);if(n.parentId!==null&&!nodes.has(n.parentId))failFormat();if(nodes.has(n.nodeId))failFormat();nodes.add(n.nodeId);
-            if(observed&&n.parentId!==null&&opaqueNodes.has(n.parentId))fail('UI_PRIVACY_REJECTED',422);
+            if((observed||environment)&&n.parentId!==null&&opaqueNodes.has(n.parentId))fail(environment?'UI_PAGE_HTML_ACTIVE_CONTENT':'UI_PRIVACY_REJECTED',422);
             if(![1,3,8,9,10,11].includes(n.nodeType)||typeof n.name!=='string'||n.name.length>256||typeof n.text!=='string'||!Array.isArray(n.attributes)||n.attributes.length>128)failFormat();
-            for(const p of n.attributes){if(!Array.isArray(p)||p.length!==2||p.some((x:unknown)=>typeof x!=='string'))failFormat();if(observed)guardAttribute(n.name,p[0],p[1]);}
+            for(const p of n.attributes){if(!Array.isArray(p)||p.length!==2||p.some((x:unknown)=>typeof x!=='string'))failFormat();if(observed)guardAttribute(n.name,p[0],p[1]);if(environment)inertAttribute(n.name,p[0],p[1]);}
             if(observed&&(['script','noscript','iframe','object','embed','textarea'].includes(n.name.toLowerCase())||n.attributes.some((a:string[])=>a[0]==='data-qagent-redacted'&&a[1]==='true')))opaqueNodes.add(n.nodeId);
+            if(environment&&['script','noscript','iframe','object','embed'].includes(n.name.toLowerCase())){opaqueNodes.add(n.nodeId);if(n.text.trim())fail('UI_PAGE_HTML_ACTIVE_CONTENT',422);}
             if(observed&&(n.nodeType===8||['script','noscript'].includes(n.name.toLowerCase())&&n.text.trim()))failFormat();}
     } else if(descriptor.kind==='LAYOUT_JSON'){
         const v=object(value,['contractVersion','documentId','viewport','entries']);if(v.contractVersion!=='qagent.ui-layout.v1'||!Array.isArray(v.entries)||v.entries.length>10000)failFormat();id(v.documentId);object(v.viewport,['width','height','deviceScaleFactor','scrollX','scrollY']);
@@ -114,10 +134,12 @@ export function inspectPageArtifactBytes(descriptor:PageArtifactInput,bytes:Uint
         for(const e of v.entries){object(e,['nodeId','bounds','styles']);id(e.nodeId);if(!Array.isArray(e.bounds)||e.bounds.length!==4||!e.bounds.every((x:unknown)=>typeof x==='number'&&Number.isFinite(x)))failFormat();if(!e.styles||typeof e.styles!=='object'||Array.isArray(e.styles)||Object.keys(e.styles).length>256)failFormat();for(const x of Object.values(e.styles))if(typeof x!=='string')failFormat();}
     } else if(descriptor.kind==='FORM_STATE_JSON'){
         const v=object(value,['contractVersion','documentId','fields','scroll']);if(v.contractVersion!=='qagent.ui-form-state.v1'||!Array.isArray(v.fields)||v.fields.length>2048||!Array.isArray(v.scroll)||v.scroll.length>2048)failFormat();id(v.documentId);
-        for(const f of v.fields){object(f,['nodeId','type','value','checked']);id(f.nodeId);if(!['text','search','email','number','checkbox','radio','select','textarea','date'].includes(f.type)||typeof f.value!=='string'||typeof f.checked!=='boolean')failFormat();}
+        for(const f of v.fields){object(f,['nodeId','type','value','checked']);id(f.nodeId);if(!(environment?['text','search','email','number','checkbox','radio','select','textarea','date','password','hidden','tel','url','time','datetime-local','month','week','range','color','button','submit','reset','image']:['text','search','email','number','checkbox','radio','select','textarea','date']).includes(f.type)||typeof f.value!=='string'||typeof f.checked!=='boolean')failFormat();}
         for(const p of v.scroll){object(p,['nodeId','x','y']);id(p.nodeId);if(![p.x,p.y].every(n=>typeof n==='number'&&Number.isFinite(n)&&n>=0))failFormat();}
     } else if(descriptor.kind==='HEADERS_JSON'){
         if(!Array.isArray(value)||value.some(p=>!Array.isArray(p)||p.length!==2||p.some(x=>typeof x!=='string')))failFormat();
+        if(environment&&(value as string[][]).length>256)fail('UI_HEADER_FORMAT_INVALID',422);
+        if(environment)for(const pair of value as string[][])if(!/^(?:[!#$%&'*+.^_`|~0-9a-z-]{1,80}|:(?:authority|method|path|scheme|status))$/.test(pair[0])||pair[1].length>2048||/[\r\n]/.test(pair[1]))fail('UI_HEADER_FORMAT_INVALID',422);
         if(observed)for(const pair of value as string[][]){if(![...SAFE_HEADERS,...(policy?.businessHeaderNames??[])].includes(pair[0]))fail('UI_HEADER_NOT_AUTHORIZED',403);if(!/^[a-z][a-z0-9-]{0,79}$/.test(pair[0])||SENSITIVE_KEY.test(keyName(pair[0]))||pair[1].length>2048||/[\r\n]/.test(pair[1]))fail('UI_HEADER_PRIVACY_OMITTED',422);}
     } else if(descriptor.kind==='ACTION_VALUE_JSON'){const v=object(value,['value']);if(!['string','number','boolean'].includes(typeof v.value)&&v.value!==null)failFormat();}
 }

@@ -6,11 +6,12 @@ export const PAGE_SOURCE_VERSION='qagent.ui-page-source.v2';
 export const PAGE_SOURCE_REF_VERSION='qagent.ui-bundle-source-ref.v2';
 export const PAGE_EXPORTER_VERSION='qagent_ui_page_source_v2';
 export const PAGE_OBSERVED_EXPORTER_VERSION='qagent_ui_page_observed_source_v2';
-export function isPageExporter(value:unknown):boolean{return value===PAGE_EXPORTER_VERSION||value===PAGE_OBSERVED_EXPORTER_VERSION;}
-export function pageExporterForCapture(capture:{dataOrigin:string}):typeof PAGE_EXPORTER_VERSION|typeof PAGE_OBSERVED_EXPORTER_VERSION{return capture.dataOrigin==='OBSERVED_SANITIZED'?PAGE_OBSERVED_EXPORTER_VERSION:PAGE_EXPORTER_VERSION;}
+export const PAGE_ENVIRONMENT_EXPORTER_VERSION='qagent_ui_page_environment_source_v2';
+export function isPageExporter(value:unknown):boolean{return value===PAGE_EXPORTER_VERSION||value===PAGE_OBSERVED_EXPORTER_VERSION||value===PAGE_ENVIRONMENT_EXPORTER_VERSION;}
+export function pageExporterForCapture(capture:{dataOrigin:string}):typeof PAGE_EXPORTER_VERSION|typeof PAGE_OBSERVED_EXPORTER_VERSION|typeof PAGE_ENVIRONMENT_EXPORTER_VERSION{return capture.dataOrigin==='OBSERVED_ENVIRONMENT_MANAGED'?PAGE_ENVIRONMENT_EXPORTER_VERSION:capture.dataOrigin==='OBSERVED_SANITIZED'?PAGE_OBSERVED_EXPORTER_VERSION:PAGE_EXPORTER_VERSION;}
 export const PAGE_PART_VERSION='qagent.ui-page-source-part.v1';
 export interface PagePartRef {kind:'EVENTS'|'ARTIFACTS';index:number;sha256:string;byteLength:number;count:number;}
-export interface PageSourceRoot {contractVersion:typeof PAGE_SOURCE_VERSION;exporterVersion:typeof PAGE_EXPORTER_VERSION|typeof PAGE_OBSERVED_EXPORTER_VERSION;scope:Scope;captureId:string;sourceRevision:string;
+export interface PageSourceRoot {contractVersion:typeof PAGE_SOURCE_VERSION;exporterVersion:typeof PAGE_EXPORTER_VERSION|typeof PAGE_OBSERVED_EXPORTER_VERSION|typeof PAGE_ENVIRONMENT_EXPORTER_VERSION;scope:Scope;captureId:string;sourceRevision:string;
  capture:{descriptor:any;completion:any;status:string;createdAt:number;completedAt:number;origins:string[]};
  ingestion:{expectedEvents:number;lastSequence:number;eventChainHash:string};parts:PagePartRef[];reachableArtifactIds:string[];counts:{events:number;artifacts:number;referencedArtifacts:number};}
 export function validatePartRef(value:unknown):PagePartRef {const v=object(value,['kind','index','sha256','byteLength','count']);if(!['EVENTS','ARTIFACTS'].includes(v.kind))fail('UI_PAGE_SOURCE_INVALID');uint(v.index,PAGE_LIMITS.sourceParts);hash(v.sha256);uint(v.byteLength,PAGE_LIMITS.sourcePartBytes);uint(v.count,PAGE_LIMITS.sourcePartItems);if(!v.byteLength||!v.count)fail('UI_PAGE_SOURCE_INVALID');return v as PagePartRef;}

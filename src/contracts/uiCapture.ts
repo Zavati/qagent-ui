@@ -13,7 +13,7 @@ export const UI_LIMITS = Object.freeze({ artifactBytes: 1048576, artifactsPerCap
     controlBytes: 32768, sessionSeconds: 900 });
 export const ARTIFACT_KINDS = ['REQUEST_JSON', 'RESPONSE_JSON', 'HEADERS_JSON', 'ACTION_VALUE_JSON', 'SEMANTIC_JSON', 'SCREENSHOT_PNG'] as const;
 export type ArtifactKind = typeof ARTIFACT_KINDS[number];
-export type DataOrigin = 'SYNTHETIC_CONTROL' | 'OBSERVED_SANITIZED';
+export type DataOrigin = 'SYNTHETIC_CONTROL' | 'OBSERVED_SANITIZED' | 'OBSERVED_ENVIRONMENT_MANAGED';
 export interface Scope {
     organizationId: string;
     projectId: string;
@@ -83,7 +83,7 @@ export interface Action {
     type: 'CLICK' | 'FILL' | 'SELECT' | 'CHECK' | 'NAVIGATE' | 'SCROLL';
     target?: Target;
     input?: {
-        source: 'OBSERVED_SANITIZED' | 'SYNTHETIC_CONTROL';
+        source: DataOrigin;
         valueRef: string;
     };
     checked?: boolean;
@@ -134,6 +134,8 @@ export interface Interaction {
         ][];
         bodyRef: string | null;
         businessHeadersRef: string | null;
+        /** Explicit PAGE-COPY r2 only; v1 validation continues to reject this field. */
+        observedHeadersRef?: string | null;
     };
     response: {
         status: number | null;
@@ -226,7 +228,7 @@ export function validateCaptureStart(value: unknown): CaptureStart {
     issues(v.issues);
     if (v.sourceBuildRef === null && !v.issues.includes('SOURCE_BUILD_UNKNOWN'))
         fail();
-    if (v.dataOrigin === 'OBSERVED_SANITIZED') validateCapturePolicy(v.capturePolicy);
+    if (v.dataOrigin === 'OBSERVED_SANITIZED') { validateCapturePolicy(v.capturePolicy); if(v.capturePolicy.dataProtection!==undefined)fail('UI_POLICY_PROFILE_MISMATCH'); }
     else if (v.capturePolicy !== undefined) fail();
     return v as CaptureStart;
 }
@@ -497,9 +499,11 @@ export function eventArtifactRefs(event: UiEvent): string[] {
 
 /** Narrow, explicit data-use scope. It is not authorization to execute business requests. */
 export type CapturePolicyMode = 'PROTECTED' | 'FULL_TEST';
+export function isEnvironmentManagedPolicy(value:unknown):value is CapturePolicy & {mode:'FULL_TEST';dataProtection:'ENVIRONMENT_MANAGED'} {const v=value as CapturePolicy|undefined;return v?.mode==='FULL_TEST'&&v?.dataProtection==='ENVIRONMENT_MANAGED';}
 export interface CapturePolicy {
     version: 'qagent.ui-capture-policy.v1';
     mode?: CapturePolicyMode;
+    dataProtection?: 'ENVIRONMENT_MANAGED';
     acknowledgeTestData: true;
     networkPaths: string[];
     businessHeaderNames?: string[];
@@ -529,14 +533,15 @@ export function validateVisualPolicy(value: unknown): VisualPolicy {
     return v as VisualPolicy;
 }
 export function validateCapturePolicy(value: unknown): CapturePolicy {
-    const v=object(value, ['version','acknowledgeTestData','networkPaths','publicTextSelectors','valueSelectors','screenshotSelectors','maskSelectors','startMode'],['businessHeaderNames','mode']);
+    const v=object(value, ['version','acknowledgeTestData','networkPaths','publicTextSelectors','valueSelectors','screenshotSelectors','maskSelectors','startMode'],['businessHeaderNames','mode','dataProtection']);
     if(v.version !== 'qagent.ui-capture-policy.v1' || v.acknowledgeTestData !== true) fail('UI_POLICY_ACK_REQUIRED');
     if(v.mode === undefined) v.mode = 'PROTECTED';
     enumValue(v.mode, ['PROTECTED','FULL_TEST']);
+    if(v.dataProtection!==undefined&&(v.dataProtection!=='ENVIRONMENT_MANAGED'||v.mode!=='FULL_TEST'))fail('UI_POLICY_PROFILE_MISMATCH');
     enumValue(v.startMode, ['NEXT_NAVIGATION','CURRENT_DOCUMENT']);
     list(v.networkPaths,16,p=> { text(p,256); if(!p.startsWith('/') || p.startsWith('//') || /[?#%\\]/.test(p)) fail('UI_POLICY_PATH_INVALID'); });
     if(!v.networkPaths.length) fail('UI_POLICY_PATH_REQUIRED');
-    if(v.businessHeaderNames!==undefined) list(v.businessHeaderNames,16,h=>{text(h,80);if(!/^[a-z][a-z0-9-]*$/.test(h) || /(?:authorization|cookie|token|secret|api-?key|session|csrf)/i.test(h))fail('UI_POLICY_HEADER_INVALID');});
+    if(v.businessHeaderNames!==undefined) list(v.businessHeaderNames,16,h=>{text(h,80);if(!/^[a-z][a-z0-9-]*$/.test(h) || (!isEnvironmentManagedPolicy(v)&&/(?:authorization|cookie|token|secret|api-?key|session|csrf)/i.test(h)))fail('UI_POLICY_HEADER_INVALID');});
     for(const field of ['publicTextSelectors','valueSelectors','screenshotSelectors','maskSelectors'])
         list(v[field],32,s=> { text(s,256); if(/[{}<>]|:has\(/i.test(s)) fail('UI_POLICY_SELECTOR_INVALID'); });
     return v as CapturePolicy;
