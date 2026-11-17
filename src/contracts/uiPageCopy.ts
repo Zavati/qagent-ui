@@ -178,8 +178,11 @@ export function validateEventsAny(value:unknown,mode:ObservedPrivacyMode='FULL_T
             } else if(cacheEvidence!==null||replayStatus!==networkStatus)fail('UI_PAGE_CACHE_EVIDENCE_INVALID');
             if(networkStatus===304&&bodySource!=='CACHE'&&bodyState!=='MISSING')fail('UI_PAGE_CACHE_EVIDENCE_REQUIRED');
             if((p.request.method==='HEAD'||[204,205].includes(networkStatus))&&bodyState!=='EMPTY')fail('UI_PAGE_BODY_STATE_INVALID');
-            // v1 rejects legitimate empty 200 bodies. Validation proxy is structural only; stored bytes/status are never changed.
-            validateInteraction({...old,contractVersion:CONTRACTS.interaction,request:oldRequest,response:{...oldResponse,...(bodyState==='EMPTY'?{status:204}:{})}});
+            // Page Copy v2 may preserve an exact observed body while the authoritative
+            // wire status is still unknown. This is evidence, NOT a replayable fixture.
+            // The v1 compatibility proxy validates shape only; it never modifies stored data.
+            if(networkStatus===null&&bodyState==='COMPLETE'&&(bodySource!=='NETWORK'||!p.issues.includes('UI_NETWORK_STATUS_UNVERIFIED')))fail('UI_PAGE_STATUS_MISMATCH');
+            validateInteraction({...old,contractVersion:CONTRACTS.interaction,request:oldRequest,response:{...oldResponse,...(bodyState==='EMPTY'?{status:204}:{}),...(networkStatus===null&&bodyState==='COMPLETE'?{completeness:'PARTIAL'}:{})}});
         } else fail('UI_PAGE_EVENT_KIND_INVALID');
         if(['ACTION','CHECKPOINT'].includes(e.kind)&&p.sequence!==e.sequence)fail('UI_EVENT_CONFLICT',409);
         if(new TextEncoder().encode(canonicalJson(e)).length>UI_LIMITS.eventBytes)fail('UI_EVENT_TOO_LARGE',413);

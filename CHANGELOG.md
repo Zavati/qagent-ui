@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.8 — Page Copy unverified status archive compatibility
+
+- The builder accepts Page Copy v2's complete response body with an unknown wire status without inventing a network or replay status. Artifact integrity remains enforced; fixture is `UNAVAILABLE` with `UI_FIXTURE_STATUS_UNAVAILABLE` until status can be independently proven.
+- Regression test confirms all source bytes remain accessible and replay qualification stays truthful. No change to Browser Runner and no migration.
+
+
 ## 0.1.7 — PC.3 r2
 
 Consome o exportador environment-managed e monta bundles pelo builder v4, com origem, responsabilidade do ambiente e dataRedactionApplied=false explícitos. Preserva qualificação por uso, integridade, contratos históricos e indicação de testes ainda não executados.

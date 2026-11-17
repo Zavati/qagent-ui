@@ -198,3 +198,21 @@ test('r1 source, build and manifest hashes match immutable fix1 baseline vectors
   const blocked = await fixture({ body: { password: 'fixture-password' } });
   await assert.rejects(blocked.assemble(), e => e.code === 'UI_PRIVACY_REJECTED');
 });
+
+test('complete captured body with unverified wire status stays archived but not usable as replay fixture',async()=>{
+ const x=await fixture({environmentManaged:true,checkpoint:true,sourceBuildRef:'build_test'});
+ x.network.payload.response.status=null;
+ x.network.payload.response.networkStatus=null;
+ x.network.payload.response.replayStatus=null;
+ x.network.payload.issues=['UI_NETWORK_STATUS_UNVERIFIED'];
+ await x.rehash();
+ const {envelope}=await x.assemble();
+ assert.equal(envelope.qualification.dimensions.integrity.status,'READY');
+ const fixtureEntry=envelope.bundle.fixtures[0];
+ assert.equal(fixtureEntry.response.bodyState,'COMPLETE');
+ assert.equal(fixtureEntry.response.bodyRef,x.body.artifactId);
+ assert.equal(fixtureEntry.response.networkStatus,null);
+ assert.equal(fixtureEntry.response.replayStatus,null);
+ assert.notEqual(fixtureEntry.availability,'READY');
+ assert(fixtureEntry.reasonCodes.includes('UI_FIXTURE_STATUS_UNAVAILABLE'));
+});
