@@ -6,19 +6,23 @@ import { eventArtifactRefs,type Scope } from '../contracts/uiCapture';
 import { MAIN_QUEUE,DLQ,MAX_MANIFEST_BYTES,builderVersionForSource,identity,messageBuilderVersion,validateMessage,makeMessage,errorCode,log,type BuildMessage,type AssemblyProfile } from '../protocol';
 import type { UiBundleEnv } from '../env';
 import { Repository,type VersionRow } from '../storage/repository';
-import { SourceClient } from './sourceClient';
+import { SourceClient,type StageDiagnostics } from './sourceClient';
 import { assemble } from './assembler';
 
-const buildStages = new WeakMap<object,string>();
-function markStage(error:unknown,stage:string):unknown {
-    if(error && (typeof error==='object' || typeof error==='function')) if(!buildStages.has(error as object))buildStages.set(error as object,stage);
+const buildStages = new WeakMap<object,{stage:string;httpStatus:number|null}>();
+function markStage(error:unknown,stage:string,diagnostics?:StageDiagnostics):unknown {
+    if(error && (typeof error==='object' || typeof error==='function')) if(!buildStages.has(error as object))buildStages.set(error as object,{stage,httpStatus:diagnostics?.httpStatus??null});
     return error;
 }
 function stageOf(error:unknown):string {
-    return error && (typeof error==='object' || typeof error==='function') ? (buildStages.get(error as object) ?? 'unknown') : 'unknown';
+    return error && (typeof error==='object' || typeof error==='function') ? (buildStages.get(error as object)?.stage ?? 'unknown') : 'unknown';
 }
-async function atStage<T>(stage:string,fn:()=>Promise<T>):Promise<T> {
-    try { return await fn(); } catch(error) { throw markStage(error,stage); }
+function errorDetails(error:unknown):Record<string,unknown> {
+    const diagnostics=error && (typeof error==='object'||typeof error==='function')?buildStages.get(error as object):undefined;
+    return {stage:stageOf(error),code:errorCode(error),errorStatus:error instanceof UiError?error.status:null,httpStatus:diagnostics?.httpStatus??null};
+}
+async function atStage<T>(stage:string,fn:()=>Promise<T>,diagnostics?:StageDiagnostics):Promise<T> {
+    try { return await fn(); } catch(error) { throw markStage(error,stage,diagnostics); }
 }
 
 export async function readEnvelope(env:UiBundleEnv,v:VersionRow,checkSource=true):Promise<Record<string,any>> {
@@ -53,7 +57,7 @@ export async function processBuild(env:UiBundleEnv,m:BuildMessage):Promise<void>
     const token=await atStage('db.lease',()=>repo.lease(m.buildId));if(!token)fail('UI_BUNDLE_BUILD_BUSY',503);
     try {
         if(m.source.contractVersion===PAGE_SOURCE_REF_VERSION) {
-            const root=await atStage('source.page_root',()=>source.loadPage(m.source)),ids=await atStage('build.identity',()=>identity(m.source,m.profile));
+            const root=await atStage('source.page_root',()=>source.loadPage(m.source,atStage)),ids=await atStage('build.identity',()=>identity(m.source,m.profile));
             await atStage('source.pin',()=>source.pin(m.source,ids.bundleVersionId,root.reachableArtifactIds));
             let heartbeat=Date.now();
             const built=await atStage('page.verify',()=>assemblePageEvidence(root,m.source,m.profile,
@@ -81,7 +85,7 @@ export async function processBuild(env:UiBundleEnv,m:BuildMessage):Promise<void>
         log('bundle.persisted',{captureId:m.source.captureId,buildId:m.buildId,bundleVersionId:version.bundle_version_id,
             manifestState:version.manifest_state,qualification:version.qualification_state,manifestHash:version.manifest_hash});
     } catch(error) {
-        log('build.stage_failed',{buildId:m.buildId,captureId:m.source.captureId,stage:stageOf(error),code:errorCode(error)});
+        log('build.stage_failed',{buildId:m.buildId,captureId:m.source.captureId,...errorDetails(error)});
         await repo.release(m.buildId,token,errorCode(error));throw error;
     }
 }
@@ -117,7 +121,7 @@ export async function consumeBuilds(batch:MessageBatch<unknown>,env:UiBundleEnv)
                 // Only safe hashes and code are retained; never persist a malformed arbitrary payload.
                 try {await repo.quarantine(message.id,null,error.code,await digestJson({messageId:message.id}));message.ack();continue;}catch{}
             }
-            log('build.retry',{buildId:parsed?.buildId??null,code:errorCode(error),stage:stageOf(error),attempt:message.attempts});
+            log('build.retry',{buildId:parsed?.buildId??null,...errorDetails(error),attempt:message.attempts});
             message.retry({delaySeconds:Math.min(300,5*2**Math.min(message.attempts,6))});
         }
     }
@@ -146,6 +150,6 @@ export async function recoverBuilds(env:UiBundleEnv):Promise<void> {
             await env.UI_BUNDLE_BUILD_QUEUE.send(message);
             await env.UI_DB.prepare("UPDATE ui_bundle_builds SET next_dispatch_at=? WHERE build_id=? AND status IN ('PENDING','BUILDING')").bind(Date.now()+900000,row.build_id).run();
             log('build.republished',{buildId:row.build_id});
-        }catch(e){log('build.republish_failed',{buildId:row.build_id,code:errorCode(e)});}
+        }catch(e){log('build.republish_failed',{buildId:row.build_id,...errorDetails(e)});}
     }
 }

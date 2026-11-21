@@ -57,7 +57,7 @@ export class Repository {
             this.db.prepare("INSERT INTO ui_bundle_audit(audit_id,bundle_version_id,event,created_at) VALUES(?,?,'ACCESS_REVOKED',?)").bind('audit_'+crypto.randomUUID(),id,Date.now())]);
     }
     async supersede(buildId:string):Promise<void> {
-        await this.db.prepare("UPDATE ui_bundle_builds SET status='FAILED',last_error='UI_BUNDLE_BUILD_SUPERSEDED',updated_at=?,lease_token=NULL,lease_until=0 WHERE build_id=? AND status<>'COMPLETE' AND lease_until<=?").bind(Date.now(),buildId,Date.now()).run();
+        await this.db.prepare("UPDATE ui_bundle_builds SET status='FAILED',last_error='UI_BUNDLE_BUILD_SUPERSEDED',updated_at=?,lease_token=NULL,lease_until=0 WHERE build_id=? AND status IN ('PENDING','BUILDING') AND lease_until<=?").bind(Date.now(),buildId,Date.now()).run();
     }
     async quarantine(messageId:string,buildId:string|null,code:string,payloadHash:string):Promise<void> {
         await this.db.prepare('INSERT INTO ui_bundle_deadletters(message_id,build_id,reason_code,payload_hash,created_at) VALUES(?,?,?,?,?) ON CONFLICT(message_id) DO NOTHING').bind(await digestJson(messageId),buildId,code,payloadHash,Date.now()).run();

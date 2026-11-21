@@ -33,8 +33,18 @@ export interface PageArtifactInput {
     privacy:{policyVersion:typeof PAGE_PRIVACY|typeof PAGE_OBSERVED_PRIVACY|typeof PAGE_ENVIRONMENT_PRIVACY;dataOrigin:DataOrigin;visual?:VisualPolicy;transformations:{kind:'REDACTED'|'PSEUDONYMIZED';path:string}[]};
 }
 export type AnyArtifactInput=ArtifactInput|PageArtifactInput;
-export type PageCaptureStart=CaptureStart & {limitsSnapshot?:PageLimits};
-export const isPageCapture=(v:any):boolean=>v?.contractVersion===PAGE_CONTRACTS.capture;
+/** Each physical capture retains its own 512-artifact/2k-event limits and seal. */
+export type PageSegment = {logicalJourneyId:string;segmentIndex:number;previousCaptureId:string|null};
+export function validatePageSegment(value:unknown):PageSegment{
+ const s=object(value,['logicalJourneyId','segmentIndex','previousCaptureId']);
+ id(s.logicalJourneyId);if(!String(s.logicalJourneyId).startsWith('uij_'))fail('UI_SEGMENT_ID_INVALID',422);
+ uint(s.segmentIndex,31);
+ if(s.segmentIndex===0){if(s.previousCaptureId!==null)fail('UI_SEGMENT_CHAIN_INVALID',409);}
+ else {id(s.previousCaptureId);if(!String(s.previousCaptureId).startsWith('uic_'))fail('UI_SEGMENT_CHAIN_INVALID',409);}
+ return s as PageSegment;
+}
+export type PageCaptureStart=CaptureStart & {limitsSnapshot?:PageLimits;segment?:PageSegment};
+export const isPageCapture=(v:any):v is PageCaptureStart=>v?.contractVersion===PAGE_CONTRACTS.capture;
 export const isPageArtifact=(v:any):v is PageArtifactInput=>v?.contractVersion===PAGE_CONTRACTS.artifact;
 export function uint(v:unknown,max=Number.MAX_SAFE_INTEGER):asserts v is number {if(!Number.isSafeInteger(v)||Number(v)<0||Number(v)>max)fail('UI_PAGE_NUMBER_INVALID');}
 function string(v:unknown,max=4096):asserts v is string {if(typeof v!=='string'||!v.length||v.length>max||/[\x00-\x1f\x7f]/.test(v))fail('UI_PAGE_TEXT_INVALID');}
@@ -50,12 +60,13 @@ export function resolvePageLimits(env:Record<string,unknown>):PageLimits {
     return pageLimits(defaults);
 }
 export function validatePageStart(value:unknown,stored=false):PageCaptureStart {
-    const v=object(value,['contractVersion','operationId','dataOrigin','documentId','entryUrl','sourceBuildRef','issues'],stored?['limitsSnapshot','capturePolicy']:['capturePolicy']);
+    const v=object(value,['contractVersion','operationId','dataOrigin','documentId','entryUrl','sourceBuildRef','issues'],stored?['limitsSnapshot','capturePolicy','segment']:['capturePolicy','segment']);
     if(v.contractVersion!==PAGE_CONTRACTS.capture)fail('UI_CONTRACT_VERSION_UNSUPPORTED');
     if(!['SYNTHETIC_CONTROL','OBSERVED_SANITIZED',PAGE_ENVIRONMENT_ORIGIN].includes(v.dataOrigin))fail('UI_CAPTURE_SOURCE_UNSUPPORTED',422);
     if(isObservedPageOrigin(v.dataOrigin)) { const policy=validateCapturePolicy(v.capturePolicy); if(policy.mode!=='FULL_TEST'||!policy.acknowledgeTestData)fail('UI_PAGE_FULL_TEST_REQUIRED',422);if((v.dataOrigin===PAGE_ENVIRONMENT_ORIGIN)!==isEnvironmentManagedPolicy(policy))fail('UI_POLICY_PROFILE_MISMATCH',422); }
     else if(v.capturePolicy!==undefined)fail('UI_PAGE_CONTRACT_INVALID',422);
-    const {limitsSnapshot,...base}=v;
+    if(v.segment!==undefined){if(!isObservedPageOrigin(v.dataOrigin))fail('UI_SEGMENT_SOURCE_INVALID',422);validatePageSegment(v.segment);}
+    const {limitsSnapshot,segment,...base}=v;
     const structural:Record<string,any>={...base,contractVersion:CONTRACTS.capture};
     if(v.dataOrigin===PAGE_ENVIRONMENT_ORIGIN){const {dataProtection,...legacyPolicy}=v.capturePolicy;structural.dataOrigin='OBSERVED_SANITIZED';structural.capturePolicy={...legacyPolicy,businessHeaderNames:[]};}
     validateCaptureStart(structural); // Structural v1 proxy only; v2 origin/policy/bytes are never rewritten.
@@ -63,7 +74,7 @@ export function validatePageStart(value:unknown,stored=false):PageCaptureStart {
 }
 export function validateStartAny(v:unknown):CaptureStart {return isPageCapture(v)?validatePageStart(v):validateCaptureStart(v);}
 export function validateCompleteAny(v:unknown):CaptureComplete {
-    if(isPageCapture(v)){validateCaptureComplete({...v as object,contractVersion:CONTRACTS.capture});return v as CaptureComplete;}
+    if(isPageCapture(v)){validateCaptureComplete({...v as object,contractVersion:CONTRACTS.capture});return v as unknown as CaptureComplete;}
     return validateCaptureComplete(v);
 }
 export function validatePageArtifact(value:unknown):PageArtifactInput {

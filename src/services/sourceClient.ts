@@ -4,17 +4,33 @@ import type { UiBundleEnv } from '../env';
 import type { Scope } from '../contracts/uiCapture';
 import { decodeJson, fail } from '../contracts/canonical';
 import { SOURCE_PREFIX,MAX_SOURCE_BYTES,internalFetch,limitedResponse,validateSourceRef,validateSnapshot,type SourceRef,type BuildMessage } from '../protocol';
+export interface StageDiagnostics {httpStatus:number|null;}
+export type StageRunner = <T>(stage:string,run:()=>Promise<T>,diagnostics?:StageDiagnostics)=>Promise<T>;
+const directStage:StageRunner=(_stage,run)=>run();
 export class SourceClient {
     constructor(private env:UiBundleEnv) {}
-    private fetch(path:string,body:unknown):Promise<Response> {return internalFetch(this.env.OBSERVATION_SERVICE,SOURCE_PREFIX+path,body,this.env.UI_BUNDLE_SOURCE_SECRET);}
+    private fetch(path:string,body:unknown,onResponse?:(status:number)=>void):Promise<Response> {
+        const binding=this.env.OBSERVATION_SERVICE;
+        // Observe the actual response before internalFetch translates upstream errors.
+        // A local signing/transport failure has no HTTP status to report.
+        const observed:Fetcher|undefined=onResponse&&binding?{
+            fetch:async(input,init)=>{const response=await binding.fetch(input,init);onResponse(response.status);return response;},
+            connect:(address,options)=>binding.connect(address,options)
+        }:binding;
+        return internalFetch(observed,SOURCE_PREFIX+path,body,this.env.UI_BUNDLE_SOURCE_SECRET);
+    }
     async resolve(scope:Scope,captureId:string):Promise<SourceRef> {
         const r=await this.fetch('resolve',{scope,captureId});const v=decodeJson(await limitedResponse(r,32768)) as any;
         return validateSourceRef(v.source);
     }
     async load(source:SourceRef) {return validateSnapshot(decodeJson(await limitedResponse(await this.fetch('snapshot',source),MAX_SOURCE_BYTES)),source);}
-    async loadPage(source:SourceRef):Promise<PageSourceRoot> {
+    async loadPage(source:SourceRef,runStage:StageRunner=directStage):Promise<PageSourceRoot> {
         if(source.contractVersion!==PAGE_SOURCE_REF_VERSION)fail('UI_BUNDLE_SOURCE_VERSION_UNSUPPORTED');
-        return validatePageRoot(decodeJson(await limitedResponse(await this.fetch('snapshot',source),PAGE_LIMITS.sourcePartBytes)),source);
+        const diagnostics:StageDiagnostics={httpStatus:null};
+        const response=await runStage('source.page_root.fetch',()=>this.fetch('snapshot',source,status=>{diagnostics.httpStatus=status;}),diagnostics);
+        const bytes=await runStage('source.page_root.read',()=>limitedResponse(response,PAGE_LIMITS.sourcePartBytes),diagnostics);
+        const root=await runStage('source.page_root.decode',async()=>decodeJson(bytes),diagnostics);
+        return runStage('source.page_root.contract',()=>validatePageRoot(root,source),diagnostics);
     }
     async pagePart(source:SourceRef,root:PageSourceRoot,index:number):Promise<any[]> {
         if(!Number.isSafeInteger(index)||index<0||index>=root.parts.length)fail('UI_PAGE_PART_NOT_FOUND',404);

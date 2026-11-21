@@ -1,4 +1,5 @@
 import { PAGE_SOURCE_REF_VERSION, PAGE_EXPORTER_VERSION, PAGE_OBSERVED_EXPORTER_VERSION, PAGE_ENVIRONMENT_EXPORTER_VERSION, isPageExporter } from './contracts/pageSource';
+import { SERVICE_NAME, SERVICE_VERSION, RELEASE_ID } from './release';
 /** Shared with Observation. Artifact and event contracts are the unchanged A.2 contracts. */
 import { canonicalJson, digestJson, sha256, fail, readBytes, decodeJson, UiError } from './contracts/canonical';
 import { id, hash, object, validateScope, validateCaptureStart, validateCaptureComplete, validateArtifactInput,
@@ -11,7 +12,8 @@ export const ASSEMBLY_VERSION = 'qagent.ui-bundle-assembly.v1';
 export const EXPORTER_VERSION = 'qagent_ui_source_v1';
 export const BUILDER_VERSION = 'qagent_ui_bundle_builder_v2';
 export const OBSERVED_BUILDER_VERSION = 'qagent_ui_bundle_builder_v3';
-export const ENVIRONMENT_BUILDER_VERSION = 'qagent_ui_bundle_builder_v4';
+export const ENVIRONMENT_BUILDER_VERSION = 'qagent_ui_bundle_builder_v5';
+export const PREVIOUS_ENVIRONMENT_BUILDER_VERSION = 'qagent_ui_bundle_builder_v4';
 export function builderVersionForSource(source:SourceRef):string{return source.exporterVersion===PAGE_ENVIRONMENT_EXPORTER_VERSION?ENVIRONMENT_BUILDER_VERSION:source.exporterVersion===PAGE_OBSERVED_EXPORTER_VERSION?OBSERVED_BUILDER_VERSION:BUILDER_VERSION;}
 export const LEGACY_BUILDER_VERSION = 'qagent_ui_bundle_builder_v1';
 export const PROFILE_VERSION = 'qagent.ui-assembly-profile.v1';
@@ -124,6 +126,8 @@ export async function identity(source: SourceRef,profile: AssemblyProfile) { ret
 export async function messageBuilderVersion(message:Pick<BuildMessage,'source'|'profile'|'buildId'>):Promise<string|null> {
     const expected=builderVersionForSource(message.source);
     if(message.buildId===(await identityForBuilder(message.source,message.profile,expected)).buildId)return expected;
+    // Recognition does not bypass validateMessage's HMAC check; consumers retire this identity.
+    if(message.source.exporterVersion===PAGE_ENVIRONMENT_EXPORTER_VERSION&&message.buildId===(await identityForBuilder(message.source,message.profile,PREVIOUS_ENVIRONMENT_BUILDER_VERSION)).buildId)return PREVIOUS_ENVIRONMENT_BUILDER_VERSION;
     if(message.source.exporterVersion!==PAGE_OBSERVED_EXPORTER_VERSION&&message.source.exporterVersion!==PAGE_ENVIRONMENT_EXPORTER_VERSION&&message.buildId===(await identityForBuilder(message.source,message.profile,LEGACY_BUILDER_VERSION)).buildId)return LEGACY_BUILDER_VERSION;
     return null;
 }
@@ -159,7 +163,7 @@ export async function authenticate(request:Request,secret:string|undefined,princ
 }
 export function json(value:unknown,status=200):Response { return new Response(JSON.stringify(value),{status,headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}}); }
 export function safeFailure(error:unknown):Response { return json({status:'error',code:errorCode(error)},error instanceof UiError?error.status:503); }
-export function log(event:string,fields:Record<string,unknown>={}):void { console.info(JSON.stringify({t:'qagent_ui_bundle',classification:'UNCLASSIFIED',event,...fields})); }
+export function log(event:string,fields:Record<string,unknown>={}):void { console.info(JSON.stringify({t:'qagent_ui_bundle',classification:'UNCLASSIFIED',event,...fields,service:SERVICE_NAME,serviceVersion:SERVICE_VERSION,release:RELEASE_ID})); }
 export async function limitedResponse(response:Response,max:number):Promise<Uint8Array> {
     const length=response.headers.get('content-length');
     if(length && (!/^\d+$/.test(length) || Number(length)>max)) fail('UI_BUNDLE_UPSTREAM_TOO_LARGE',413);

@@ -49,7 +49,7 @@ test('age alone never expires a persisted reference',async t=>{const {d,f}=await
 test('explicit object loss is diagnosed without changing old qualification',async t=>{const {d,f}=await fixture(t);await consumeOne(f,await p.protocol.makeMessage(d.ref,d.profile,SECRET));d.bytes.delete('uia_body');const id=(await p.protocol.identity(d.ref,d.profile)).bundleVersionId;const r=await ops(f,'inspect',{scope:d.ref.scope,bundleVersionId:id});assert.equal(r.status,200);const b=await r.json();assert.equal(b.dependenciesAvailable,false);assert.equal(b.qualificationAtAssembly,'READY');});
 test('bad queue envelope retries then is quarantined without raw payload',async t=>{const {f}=await fixture(t);const msg=delivery({secret:'must-not-be-stored'});await f.services.consumeBuilds({queue:p.protocol.DLQ,messages:[msg]},f.env);assert.equal(msg.acked,true);const row=f.db.sql.prepare('SELECT * FROM ui_bundle_deadletters').get();assert.ok(row);assert.equal(JSON.stringify(row).includes('must-not-be-stored'),false);});
 test('unknown paths stay closed, no unauthenticated data endpoint',async t=>{const {f}=await fixture(t);assert.equal((await f.routes.default.fetch(new Request('https://ui.test/'),f.env)).status,404);assert.equal((await f.routes.default.fetch(new Request('https://ui.test/internal/ui/v1/list',{method:'POST',body:'{}'}),f.env)).status,401);});
-test('public health contains no credentials or capture data',async t=>{const {f}=await fixture(t);const r=await f.routes.default.fetch(new Request('https://ui.test/health'),f.env);assert.equal(r.status,200);assert.deepEqual(Object.keys(await r.json()).sort(),['service','stage','status','version']);});
+test('public health contains no credentials or capture data',async t=>{const {f}=await fixture(t);const r=await f.routes.default.fetch(new Request('https://ui.test/health'),f.env);assert.equal(r.status,200);assert.deepEqual(Object.keys(await r.json()).sort(),['builderVersion','capabilities','release','service','stage','status','version']);});
 test('revoked version does not poison a duplicate successful delivery',async t=>{const {d,f}=await fixture(t),m=await p.protocol.makeMessage(d.ref,d.profile,SECRET);await consumeOne(f,m);const id=(await p.protocol.identity(d.ref,d.profile)).bundleVersionId;await ops(f,'revoke',{scope:d.ref.scope,bundleVersionId:id});assert.equal((await consumeOne(f,m)).acked,true);});
 test('oversized contract issue union persists diagnostic instead of truncating issues',async()=>{const d=await sample(p);for(let i=0;i<70;i++){d.snapshot.events.push({eventId:'uie_gap_'+i,sequence:5+i,kind:'GAP',payload:{code:'UI_CUSTOM_GAP_'+i,documentId:'doc_synthetic',stepId:null},contentHash:''});}d.ref=await d.rehash();const r=await assembled(d);assert.equal(r.envelope.manifestState,'DIAGNOSTIC');assert.ok(r.envelope.qualification.issues.length>=70);});
 
@@ -69,7 +69,7 @@ async function cliModule(){return import(require('node:url').pathToFileURL(path.
 
 test('public prefix health responds without DB, Queue, R2 or operator credentials',async t=>{
  const {f}=await fixture(t);const r=await f.routes.default.fetch(new Request('https://api.example.test/v1/qagent-ui/health'),{});
- assert.equal(r.status,200);assert.deepEqual(await r.json(),{status:'ok',service:'qagent-ui',version:'0.1.6',stage:'08.2-PC.3'});
+ assert.equal(r.status,200);assert.deepEqual(await r.json(),{status:'ok',service:'qagent-ui',version:'0.1.10',release:'qagent-page-root-recovery-2.0.26-fix1',builderVersion:p.protocol.ENVIRONMENT_BUILDER_VERSION,capabilities:{pageCaptureSegments:true},stage:'08.2-PC.3'});
 });
 test('public prefix never exposes source capabilities or unknown paths',async t=>{
  const {f}=await fixture(t);
@@ -183,4 +183,35 @@ test('delayed builder v1 queue message is acknowledged as superseded without ret
  const row=f.db.sql.prepare('SELECT status,last_error FROM ui_bundle_builds WHERE build_id=?').get(ids.buildId);
  assert.equal(row.status,'FAILED');assert.equal(row.last_error,'UI_BUNDLE_BUILD_SUPERSEDED');
  assert.equal(f.db.sql.prepare('SELECT COUNT(*) n FROM ui_bundle_versions').get().n,0);
+});
+
+test('environment v5 is current; signed historical v4 is recognized without weakening authentication or rewriting FAILED',async t=>{
+ const {d,f}=await fixture(t),repo=new Repository(f.db);
+ const source={...d.ref,contractVersion:'qagent.ui-bundle-source-ref.v2',exporterVersion:'qagent_ui_page_environment_source_v2'};
+ const profile=p.protocol.DEFAULT_PROFILE;
+ assert.equal(profile.revision,1);assert.equal(p.protocol.ENVIRONMENT_BUILDER_VERSION,'qagent_ui_bundle_builder_v5');
+ const ids=await p.protocol.identityForBuilder(source,profile,'qagent_ui_bundle_builder_v4');
+ const unsigned={contractVersion:p.protocol.BUILD_REQUEST_VERSION,source,profile,buildId:ids.buildId};
+ const legacy={...unsigned,signature:crypto.createHmac('sha256',SECRET).update('QAGENT_UI_BUNDLE_QUEUE_V1\n'+p.canonical.canonicalJson(unsigned)).digest('hex')};
+ assert.equal(await p.protocol.messageBuilderVersion(legacy),'qagent_ui_bundle_builder_v4');
+ await p.protocol.validateMessage(legacy,SECRET);
+ await assert.rejects(p.protocol.validateMessage({...legacy,signature:'0'.repeat(64)},SECRET),/UI_BUNDLE_AUTH_INVALID/);
+ await repo.admit(legacy);await repo.quarantine('historical_v4_failure',legacy.buildId,'UI_CONTRACT_INVALID',await p.canonical.digestJson(legacy));
+ const before=await repo.getBuild(legacy.buildId),message=await consumeOne(f,legacy);
+ assert.equal(message.acked,true);assert.equal(message.retried,false);assert.deepEqual(await repo.getBuild(legacy.buildId),before);
+ const current=await p.protocol.makeMessage(source,profile,SECRET);
+ assert.notEqual(current.buildId,legacy.buildId);assert.equal(await p.protocol.messageBuilderVersion(current),'qagent_ui_bundle_builder_v5');
+});
+
+test('supersede respects active leases and COMPLETE builds, retiring only pending or expired work',async t=>{
+ const {d,f}=await fixture(t),repo=new Repository(f.db),current=await p.protocol.makeMessage(d.ref,d.profile,SECRET);
+ await repo.admit(current);await repo.lease(current.buildId);
+ const leased=await repo.getBuild(current.buildId);await repo.supersede(current.buildId);
+ assert.deepEqual(await repo.getBuild(current.buildId),leased);
+ f.db.sql.prepare('UPDATE ui_bundle_builds SET lease_until=0 WHERE build_id=?').run(current.buildId);
+ await repo.supersede(current.buildId);assert.equal((await repo.getBuild(current.buildId)).last_error,'UI_BUNDLE_BUILD_SUPERSEDED');
+ const next=await p.protocol.makeMessage(d.ref,{...d.profile,revision:2},SECRET);
+ assert.equal((await consumeOne(f,next)).acked,true);
+ const complete=await repo.getBuild(next.buildId);await repo.supersede(next.buildId);
+ assert.deepEqual(await repo.getBuild(next.buildId),complete);assert.equal(complete.status,'COMPLETE');
 });

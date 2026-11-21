@@ -7,6 +7,7 @@ import { Repository } from './storage/repository';
 import { consumeBuilds,recoverBuilds,requestBuild,readEnvelope } from './services/buildService';
 import { SourceClient } from './services/sourceClient';
 import { PAGE_EXPORTER_VERSION,PAGE_OBSERVED_EXPORTER_VERSION,PAGE_ENVIRONMENT_EXPORTER_VERSION } from './contracts/pageSource';
+import { SERVICE_NAME,SERVICE_VERSION,RELEASE_ID,RELEASE_CAPABILITIES } from './release';
 
 // Public operator mount; internal Service Binding routes remain unchanged.
 // Authenticate the ORIGINAL request URL so the signature binds the actual wire path.
@@ -14,7 +15,7 @@ const PUBLIC_PREFIX = '/v1/qagent-ui/';
 
 export async function route(request:Request,env:UiBundleEnv):Promise<Response> {
     const path=new URL(request.url).pathname;
-    if((path==='/health' || path===PUBLIC_PREFIX+'health') && request.method==='GET')return json({status:'ok',service:'qagent-ui',version:'0.1.6',stage:'08.2-PC.3'});
+    if((path==='/health' || path===PUBLIC_PREFIX+'health') && request.method==='GET')return json({status:'ok',service:SERVICE_NAME,version:SERVICE_VERSION,release:RELEASE_ID,builderVersion:ENVIRONMENT_BUILDER_VERSION,capabilities:RELEASE_CAPABILITIES,stage:'08.2-PC.3'});
     const isPublic=path.startsWith(PUBLIC_PREFIX);
     if(!isPublic && !path.startsWith(UI_PREFIX))return json({status:'error',code:'UI_BUNDLE_ROUTE_NOT_FOUND'},404);
     const op=path.slice((isPublic?PUBLIC_PREFIX:UI_PREFIX).length),repo=new Repository(env.UI_DB);
