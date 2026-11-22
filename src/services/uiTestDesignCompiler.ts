@@ -38,6 +38,60 @@ export async function validateDesignEnvelope(e:any):Promise<DesignSource>{
   return source;
 }
 interface Artifact {artifactId:string;kind:string;sha256:string;byteLength:number;completeness:string;contentType:string;[key:string]:any;}
+export interface ArtifactReadOptions {signal?:AbortSignal;maxBytes?:number;}
+export interface CompilationProgress {totalArtifacts:number;verifiedArtifacts:number;verifiedBytes:number;}
+export interface CompilationRuntime {signal?:AbortSignal;onProgress?:(progress:CompilationProgress)=>void;}
+type ArtifactReader=(artifactId:string,options?:ArtifactReadOptions)=>Promise<Uint8Array>;
+const ARTIFACT_READ_CONCURRENCY=4, ARTIFACT_READ_BYTES=16*1024*1024;
+const decodedArtifactKinds=new Set(['DOM_SNAPSHOT_JSON','LAYOUT_JSON','FORM_STATE_JSON','ACTION_VALUE_JSON','HEADERS_JSON']);
+function abortReason(signal:AbortSignal):unknown{return signal.reason??new DOMException('UI Test Design compilation aborted','AbortError');}
+function checkAbort(signal?:AbortSignal):void{if(signal?.aborted)throw abortReason(signal);}
+/** Observe the original promise even after abort: a reader may ignore cancellation or reject later. */
+function untilAbort<T>(pending:Promise<T>,signal:AbortSignal):Promise<T>{
+  return new Promise<T>((resolve,reject)=>{
+    let finished=false;
+    const finish=(run:()=>void)=>{if(finished)return;finished=true;signal.removeEventListener('abort',onAbort);run();};
+    const onAbort=()=>finish(()=>reject(abortReason(signal)));
+    signal.addEventListener('abort',onAbort,{once:true});
+    pending.then(value=>finish(()=>resolve(value)),error=>finish(()=>reject(error)));
+    if(signal.aborted)onAbort();
+  });
+}
+/** Bound transport fan-out and retained in-flight buffers without changing evidence or output order. */
+function readVerifiedArtifacts(artifacts:Artifact[],readArtifact:ArtifactReader,runtime:CompilationRuntime):Promise<{decoded:Map<string,any>;verifiedArtifacts:number;verifiedBytes:number}>{
+  const ordered=[...artifacts].sort((a,b)=>a.artifactId<b.artifactId?-1:a.artifactId>b.artifactId?1:0);
+  const decoded=new Map<string,any>(),controller=new AbortController();
+  return new Promise((resolve,reject)=>{
+    let settled=false,next=0,active=0,reservedBytes=0,verifiedArtifacts=0,verifiedBytes=0;
+    const clean=()=>runtime.signal?.removeEventListener('abort',onAbort);
+    const rejectAll=(error:unknown)=>{if(settled)return;settled=true;clean();decoded.clear();controller.abort(error);reject(error);};
+    const onAbort=()=>rejectAll(abortReason(runtime.signal!));
+    const progress=()=>runtime.onProgress?.({totalArtifacts:ordered.length,verifiedArtifacts,verifiedBytes});
+    const pump=()=>{
+      if(settled)return;
+      while(active<ARTIFACT_READ_CONCURRENCY&&next<ordered.length){
+        const ref=ordered[next];
+        // A single artifact may occupy the whole reservation. Never start another alongside it.
+        if(active&&reservedBytes+ref.byteLength>ARTIFACT_READ_BYTES)break;
+        next++;active++;reservedBytes+=ref.byteLength;
+        const release=()=>{active--;reservedBytes-=ref.byteLength;if(!settled)pump();};
+        Promise.resolve().then(async()=>{
+          if(settled)return;
+          const bytes=await untilAbort(Promise.resolve(readArtifact(ref.artifactId,{signal:controller.signal,maxBytes:ref.byteLength})),controller.signal);
+          if(settled)return;
+          if(bytes.length!==ref.byteLength||await sha256(bytes)!==ref.sha256)fail('UI_BUNDLE_ARTIFACT_HASH_MISMATCH',409);
+          if(settled)return;
+          if(decodedArtifactKinds.has(ref.kind))decoded.set(ref.artifactId,decodeJson(bytes));
+          verifiedArtifacts++;verifiedBytes+=bytes.length;progress();
+        }).then(release,error=>{rejectAll(error);release();});
+      }
+      if(!active&&next===ordered.length){settled=true;clean();resolve({decoded,verifiedArtifacts,verifiedBytes});}
+    };
+    runtime.signal?.addEventListener('abort',onAbort,{once:true});
+    if(runtime.signal?.aborted){onAbort();return;}
+    try{progress();pump();}catch(error){rejectAll(error);}
+  });
+}
 interface DomNode {nodeId:string;parentId:string|null;nodeType:number;name:string;attributes:[string,string][];text:string;}
 function domNodes(value:any,doc:string):DomNode[]{
   object(value,['contractVersion','documentId','nodes']);if(value.contractVersion!=='qagent.ui-dom-snapshot.v1'||value.documentId!==doc)fail('UI_TEST_DESIGN_ARTIFACT_CONTEXT_MISMATCH',409);
@@ -68,8 +122,10 @@ function locatorsFor(nodes:DomNode[]):Map<string,Locator>{
 }
 function assertDocumentArtifact(value:any,doc:string,version:string,keys:string[]):void{object(value,keys);if(value.contractVersion!==version||value.documentId!==doc)fail('UI_TEST_DESIGN_ARTIFACT_CONTEXT_MISMATCH',409);}
 
-export async function compileObservedBundle(envelope:Record<string,any>,readArtifact:(artifactId:string)=>Promise<Uint8Array>,profileInput?:unknown):Promise<Compilation>{
+export async function compileObservedBundle(envelope:Record<string,any>,readArtifact:ArtifactReader,profileInput?:unknown,runtime:CompilationRuntime={}):Promise<Compilation>{
+  checkAbort(runtime.signal);
   const source=await validateDesignEnvelope(envelope),profile=validateTestDesignProfile(profileInput);
+  checkAbort(runtime.signal);
   const exclusions:Exclusion[]=[],limitations=new Set<string>(['UI_TEST_DESIGN_OBSERVED_CHARACTERIZATION','UI_TEST_DESIGN_NOT_EXECUTED','UI_TEST_DESIGN_FULL_COVERAGE_UNPROVEN','UI_TEST_DESIGN_RENDER_PROFILE_INCOMPLETE']);
   const coverage:Record<string,number>={actionsTotal:0,actionsSupported:0,checkpointsTotal:0,stableCheckpoints:0,nodesConsidered:0,checksGenerated:0,checksExcluded:0,actionsExcluded:0,checkpointsExcluded:0,nodesExcluded:0,capabilitiesExcluded:0,artifactsVerified:0,artifactBytesVerified:0,businessFixtures:0,usableFixtures:0,unavailableFixtures:0};
   const noDesign=(codes:string[]):Compilation=>({contractVersion:COMPILATION_VERSION,compilerVersion:COMPILER_VERSION,outcome:'NO_DESIGN',source,specification:null,specificationHash:null,summary:{coverage,limitations:sortedUnique([...limitations]),reasonCodes:sortedUnique(codes)},executionPerformed:false});
@@ -79,12 +135,9 @@ export async function compileObservedBundle(envelope:Record<string,any>,readArti
     ||r.dataOrigin!==(envelope.source.exporterVersion==='qagent_ui_page_environment_source_v2'?'OBSERVED_ENVIRONMENT_MANAGED':'OBSERVED_SANITIZED'))fail('UI_TEST_DESIGN_ARTIFACT_REF_INVALID',409);
     artifacts.set(r.artifactId,r);declared+=r.byteLength;}
   if(declared>profile.maxArtifactBytes)return noDesign(['UI_TEST_DESIGN_ARTIFACT_BUDGET_EXCEEDED']);
-  const decoded=new Map<string,any>();
-  for(const r of [...artifacts.values()].sort((a,b)=>a.artifactId<b.artifactId?-1:a.artifactId>b.artifactId?1:0)){const bytes=await readArtifact(r.artifactId);
-    if(bytes.length!==r.byteLength||await sha256(bytes)!==r.sha256)fail('UI_BUNDLE_ARTIFACT_HASH_MISMATCH',409);
-    coverage.artifactsVerified++;coverage.artifactBytesVerified+=bytes.length;
-    if(['DOM_SNAPSHOT_JSON','LAYOUT_JSON','FORM_STATE_JSON','ACTION_VALUE_JSON','HEADERS_JSON'].includes(r.kind))decoded.set(r.artifactId,decodeJson(bytes));
-  }
+  const {decoded,verifiedArtifacts,verifiedBytes}=await readVerifiedArtifacts([...artifacts.values()],readArtifact,runtime);
+  coverage.artifactsVerified=verifiedArtifacts;coverage.artifactBytesVerified=verifiedBytes;
+  checkAbort(runtime.signal);
   const ref=(artifactId:string,kind?:string):Artifact=>{const r=artifacts.get(artifactId);if(!r||(kind&&r.kind!==kind))fail('UI_TEST_DESIGN_ARTIFACT_REF_INVALID',409);return r;};
   const expectedRef=(artifactId:string,pointer:string):ExpectedSource=>{const r=ref(artifactId);return {artifactId,sha256:r.sha256,byteLength:r.byteLength,jsonPointer:pointer};};
   const manifestRef=(pointer:string):ExpectedSource=>({artifactId:null,sha256:source.manifestHash,byteLength:null,jsonPointer:pointer});
@@ -171,6 +224,7 @@ export async function compileObservedBundle(envelope:Record<string,any>,readArti
     for(const [artifactId,h,kind] of [[f.request.bodyRef,f.request.bodySha256,'HTTP_REQUEST_BODY'],[f.request.businessHeadersRef,f.request.businessHeadersSha256,'HEADERS_JSON'],[f.response.bodyRef,f.response.bodySha256,'HTTP_RESPONSE_BODY'],[f.response.headersRef,f.response.headersSha256,'HEADERS_JSON']]){
       if(artifactId!==null){const r=ref(artifactId,kind);if(r.sha256!==h)fail('UI_TEST_DESIGN_NETWORK_HASH_MISMATCH',409);}else if(h!==null)fail('UI_TEST_DESIGN_NETWORK_HASH_MISMATCH',409);}
     const fingerprint=await digestJson({service:f.request.logicalServiceKey,origin:f.request.origin,method:f.request.method,path:f.request.path,query:f.request.query,bodyHash:f.request.bodySha256,businessHeadersHash:f.request.businessHeadersSha256});
+    checkAbort(runtime.signal);
     if(f.match.policyVersion!=='qagent_ui_observed_fixture_match_v1'||f.match.requestFingerprint!==fingerprint||canonicalJson(context(f.match))!==canonicalJson(context(f))||!Number.isSafeInteger(f.match.occurrenceIndex)||f.match.occurrenceIndex<0)fail('UI_TEST_DESIGN_MATCH_POLICY_UNSUPPORTED',422);
     if(f.availability==='READY'&&(!['COMPLETE','EMPTY'].includes(f.response.bodyState)||f.response.replayStatus===null||(f.response.networkStatus===304&&!f.response.cacheEvidenceVerified)||(f.response.bodyState==='COMPLETE'&&f.response.bodyRef===null)))fail('UI_TEST_DESIGN_FIXTURE_AVAILABILITY_INVALID',409);
     add('REQUEST_MATCHES',null,null,{request:f.request,match:f.match},manifestRef('/bundle/fixtures/'+fi),{fixtureId:f.fixtureId},context(f));
@@ -215,6 +269,7 @@ export async function compileObservedBundle(envelope:Record<string,any>,readArti
     }
     try{validateUiSpecificationShape(specification);} catch{fail('UI_TEST_DESIGN_OUTPUT_INVALID',422);}
     const result:Compilation={contractVersion:COMPILATION_VERSION,compilerVersion:COMPILER_VERSION,outcome:'COMPILED',source,specification,specificationHash:await digestJson(specification),summary:{coverage,limitations:specification.limitations,reasonCodes:[]},executionPerformed:false};
+    checkAbort(runtime.signal);
     if(new TextEncoder().encode(canonicalJson(result)).length>MAX_COMPILATION_BYTES)return noDesign(['UI_TEST_DESIGN_SPECIFICATION_LIMIT']);
     return result;
   }catch(e){if(e instanceof UiError&&e.code==='UI_JSON_COMPLEXITY_LIMIT')return noDesign(['UI_TEST_DESIGN_SPECIFICATION_LIMIT']);throw e;}

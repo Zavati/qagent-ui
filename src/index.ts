@@ -15,6 +15,12 @@ import { SERVICE_NAME,SERVICE_VERSION,RELEASE_ID,RELEASE_CAPABILITIES } from './
 // Authenticate the ORIGINAL request URL so the signature binds the actual wire path.
 const PUBLIC_PREFIX = '/v1/qagent-ui/';
 
+// Older Worker compatibility dates may not expose an incoming cancellation signal.
+// Compilation has its own deadline regardless of whether the caller's signal exists.
+function incomingSignal(request:Request):AbortSignal|undefined {
+    try{return request.signal;}catch{return undefined;}
+}
+
 export async function route(request:Request,env:UiBundleEnv):Promise<Response> {
     const path=new URL(request.url).pathname;
     if((path==='/health' || path===PUBLIC_PREFIX+'health') && request.method==='GET')return json({status:'ok',service:SERVICE_NAME,version:SERVICE_VERSION,release:RELEASE_ID,builderVersion:ENVIRONMENT_BUILDER_VERSION,capabilities:RELEASE_CAPABILITIES,stage:'UI-TD-1'});
@@ -24,7 +30,7 @@ export async function route(request:Request,env:UiBundleEnv):Promise<Response> {
     if(op.startsWith('test-design/') && !isPublic) {
         if(!['test-design/compile','test-design/sources','test-design/source'].includes(op))return json({status:'error',code:'UI_BUNDLE_ROUTE_NOT_FOUND'},404);
         const input=await authenticate(request,env.UI_TEST_DESIGN_SECRET,'test-design');
-        if(op==='test-design/compile') {const v=object(input,['scope','bundleVersionId','compilerVersion'],['profile']);return json(await compileTestDesign(env,validateScope(v.scope),v.bundleVersionId,v.compilerVersion,v.profile));}
+        if(op==='test-design/compile') {const v=object(input,['scope','bundleVersionId','compilerVersion'],['profile']);return json(await compileTestDesign(env,validateScope(v.scope),v.bundleVersionId,v.compilerVersion,v.profile,{signal:incomingSignal(request),requestId:request.headers.get('X-QAgent-UI-Test-Design-Request-Id')}));}
         if(op==='test-design/source') {const v=object(input,['scope','bundleVersionId'],['expectedManifestHash']);return json(await inspectTestDesignSource(env,validateScope(v.scope),v.bundleVersionId,v.expectedManifestHash));}
         const v=object(input,['scope'],['captureId','cursor','limit']);return json(await listTestDesignSources(env,validateScope(v.scope),v.captureId??null,v.cursor,v.limit??20));
     }

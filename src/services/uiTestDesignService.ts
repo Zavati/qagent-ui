@@ -4,9 +4,19 @@ import { readEnvelope } from './buildService';
 import { SourceClient } from './sourceClient';
 import { canonicalJson, decodeJson, fail, UiError } from '../contracts/canonical';
 import { hash, id, validateScope, type Scope } from '../contracts/uiCapture';
-import { sameScope, scoped } from '../protocol';
+import { errorCode, sameScope, scoped } from '../protocol';
 import { compileObservedBundle, validateDesignEnvelope } from './uiTestDesignCompiler';
 import { COMPILER_VERSION, type Compilation, type DesignSource } from '../contracts/uiTestDesign';
+import { SERVICE_NAME, SERVICE_VERSION, RELEASE_ID } from '../release';
+
+/** Finish locally before the Gateway's 120s deadline so retries retain a precise stage. */
+export const TEST_DESIGN_COMPILE_TIMEOUT_MS = 105000;
+export interface TestDesignRuntime {signal?:AbortSignal;requestId?:string|null;}
+
+function requestId(value:string|null|undefined):string {
+  return typeof value==='string'&&/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)
+    ? value.toLowerCase():crypto.randomUUID();
+}
 
 async function sourceEnvelope(env:UiBundleEnv,scope:Scope,bundleVersionId:string,expectedManifestHash?:string){
   validateScope(scope);id(bundleVersionId);if(expectedManifestHash!==undefined)hash(expectedManifestHash);
@@ -19,13 +29,66 @@ export async function inspectTestDesignSource(env:UiBundleEnv,scope:Scope,bundle
   const {source,envelope}=await sourceEnvelope(env,scope,bundleVersionId,expectedManifestHash);
   return {contractVersion:'qagent.ui-page-evidence.v2',source,qualification:{integrity:envelope.qualification.dimensions.integrity.status,counts:envelope.qualification.counts},executionPerformed:false};
 }
-export async function compileTestDesign(env:UiBundleEnv,scope:Scope,bundleVersionId:string,compilerVersion:string,profile?:unknown):Promise<Compilation>{
+export async function compileTestDesign(env:UiBundleEnv,scope:Scope,bundleVersionId:string,compilerVersion:string,profile?:unknown,runtime:TestDesignRuntime={}):Promise<Compilation>{
   if(compilerVersion!==COMPILER_VERSION)fail('UI_TEST_DESIGN_COMPILER_UNSUPPORTED',422);
-  const {envelope}=await sourceEnvelope(env,scope,bundleVersionId),client=new SourceClient(env);
-  const result=await compileObservedBundle(envelope,id=>client.artifact(envelope.source,id),profile);
-  // A source revoked while bytes were being read is not admitted to publication.
-  await client.checkAccess(envelope.source);await new Repository(env.UI_DB).version(scope,bundleVersionId);
-  return result;
+  validateScope(scope);id(bundleVersionId);
+  const startedAt=Date.now(),traceId=requestId(runtime.requestId),controller=new AbortController();
+  let stage='source.envelope',finished=false,lastProgressAt=startedAt,lastProgressCount=-1;
+  let progress={totalArtifacts:0,verifiedArtifacts:0,verifiedBytes:0};
+  const activeArtifacts=new Set<string>();
+  const emit=(event:string,extra:Record<string,unknown>={})=>{
+    // No page contents, observed URLs, headers or error messages are logged.
+    // The trace id is diagnostic only; it never participates in authorization or hashes.
+    console.info(JSON.stringify({t:'qagent_ui_test_design',event,requestId:traceId,bundleVersionId,compilerVersion,
+      stage,elapsedMs:Date.now()-startedAt,...progress,activeArtifacts:activeArtifacts.size,
+      service:SERVICE_NAME,serviceVersion:SERVICE_VERSION,release:RELEASE_ID,...extra}));
+  };
+  const abort=()=>controller.abort(new UiError(499,'UI_TEST_DESIGN_COMPILE_CANCELLED'));
+  const timer=setTimeout(()=>controller.abort(new UiError(504,'UI_TEST_DESIGN_COMPILE_TIMEOUT')),TEST_DESIGN_COMPILE_TIMEOUT_MS);
+  if(runtime.signal?.aborted)abort();else runtime.signal?.addEventListener('abort',abort,{once:true});
+  const check=()=>{if(controller.signal.aborted)throw controller.signal.reason;};
+  let rejectAbort:(reason:unknown)=>void=()=>{};
+  const interrupted=new Promise<never>((_,reject)=>{rejectAbort=reject;});
+  const onAbort=()=>rejectAbort(controller.signal.reason);
+  controller.signal.addEventListener('abort',onAbort,{once:true});
+  emit('compile.started');
+  try {
+    check();
+    const operation=(async()=>{
+      const {envelope}=await sourceEnvelope(env,scope,bundleVersionId);check();
+      const client=new SourceClient(env);
+      stage='artifacts.verify';emit('compile.stage');
+      const result=await compileObservedBundle(envelope,async(artifactId,options)=>{
+        check();activeArtifacts.add(artifactId);
+        try{return await client.artifact(envelope.source,artifactId,options);}
+        finally{activeArtifacts.delete(artifactId);}
+      },profile,{signal:controller.signal,onProgress:next=>{
+        if(finished||controller.signal.aborted)return;
+        progress=next;
+        const now=Date.now();
+        if(lastProgressCount<0||next.verifiedArtifacts===next.totalArtifacts||next.verifiedArtifacts-lastProgressCount>=32||now-lastProgressAt>=5000){
+          emit('compile.progress');lastProgressAt=now;lastProgressCount=next.verifiedArtifacts;
+        }
+        if(next.verifiedArtifacts===next.totalArtifacts){stage='plan.compile';emit('compile.stage');}
+      }});
+      check();stage='source.recheck';emit('compile.stage');
+      // A source revoked while bytes were being read is not admitted to publication.
+      await client.checkAccess(envelope.source,{signal:controller.signal});check();
+      await new Repository(env.UI_DB).version(scope,bundleVersionId);check();
+      return result;
+    })();
+    const result=await Promise.race([operation,interrupted]);
+    stage='done';emit('compile.completed',{outcome:result.outcome,checksGenerated:result.summary.coverage.checksGenerated});
+    return result;
+  } catch(error) {
+    emit('compile.failed',{code:errorCode(error),status:error instanceof UiError?error.status:503});
+    if(!controller.signal.aborted)controller.abort(error);
+    throw error;
+  } finally {
+    finished=true;clearTimeout(timer);
+    runtime.signal?.removeEventListener('abort',abort);
+    controller.signal.removeEventListener('abort',onAbort);
+  }
 }
 interface Cursor {version:1;scope:Scope;captureId:string|null;after:string;ceiling:string;}
 function cursorEncode(v:Cursor):string{return btoa(canonicalJson(v)).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');}

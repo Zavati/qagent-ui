@@ -4,7 +4,9 @@ import type { UiBundleEnv } from '../env';
 import type { Scope } from '../contracts/uiCapture';
 import { decodeJson, fail } from '../contracts/canonical';
 import { SOURCE_PREFIX,MAX_SOURCE_BYTES,internalFetch,limitedResponse,validateSourceRef,validateSnapshot,type SourceRef,type BuildMessage } from '../protocol';
+import { fetchSourceBytes,fetchSourceStatus } from './sourceIo';
 export interface StageDiagnostics {httpStatus:number|null;}
+export interface SourceArtifactReadOptions {signal?:AbortSignal;maxBytes?:number;}
 export type StageRunner = <T>(stage:string,run:()=>Promise<T>,diagnostics?:StageDiagnostics)=>Promise<T>;
 const directStage:StageRunner=(_stage,run)=>run();
 export class SourceClient {
@@ -38,9 +40,13 @@ export class SourceClient {
         if(bytes.length!==root.parts[index].byteLength)fail('UI_PAGE_PART_HASH_MISMATCH',409);
         return validatePagePart(decodeJson(bytes),root.parts[index],root);
     }
-    async checkAccess(source:SourceRef):Promise<void> {await this.fetch('status',source);}
-    async artifact(source:SourceRef,artifactId:string):Promise<Uint8Array> {
-        return limitedResponse(await this.fetch('artifact',{source,artifactId}),source.contractVersion===PAGE_SOURCE_REF_VERSION?PAGE_LIMITS.artifactBytes:1048576);
+    async checkAccess(source:SourceRef,options:Pick<SourceArtifactReadOptions,'signal'>={}):Promise<void> {
+        await fetchSourceStatus(this.env.OBSERVATION_SERVICE,SOURCE_PREFIX+'status',source,this.env.UI_BUNDLE_SOURCE_SECRET,options.signal);
+    }
+    async artifact(source:SourceRef,artifactId:string,options:SourceArtifactReadOptions={}):Promise<Uint8Array> {
+        const contractLimit=source.contractVersion===PAGE_SOURCE_REF_VERSION?PAGE_LIMITS.artifactBytes:1048576;
+        const max=options.maxBytes===undefined?contractLimit:Math.min(contractLimit,options.maxBytes);
+        return fetchSourceBytes(this.env.OBSERVATION_SERVICE,SOURCE_PREFIX+'artifact',{source,artifactId},this.env.UI_BUNDLE_SOURCE_SECRET,max,options.signal);
     }
     async pin(source:SourceRef,bundleVersionId:string,artifactIds:string[]):Promise<void> {
         if(source.contractVersion===PAGE_SOURCE_REF_VERSION && artifactIds.length>128){for(let i=0;i<artifactIds.length;i+=128)await this.pin(source,bundleVersionId,artifactIds.slice(i,i+128));return;}
