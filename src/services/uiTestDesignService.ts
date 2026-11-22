@@ -7,6 +7,8 @@ import { hash, id, validateScope, type Scope } from '../contracts/uiCapture';
 import { errorCode, sameScope, scoped } from '../protocol';
 import { compileObservedBundle, validateDesignEnvelope } from './uiTestDesignCompiler';
 import { COMPILER_VERSION, type Compilation, type DesignSource } from '../contracts/uiTestDesign';
+import { UI_OBSERVED_COMPILER_VERSION, validateUiObservedPlanShape, type ObservedPlanCompilation } from '../contracts/uiObservedPlan';
+import { compileObservedPlan, observedPlanPage, type PlanPageRequest } from './uiObservedPlan';
 import { SERVICE_NAME, SERVICE_VERSION, RELEASE_ID } from '../release';
 
 /** Finish locally before the Gateway's 120s deadline so retries retain a precise stage. */
@@ -29,8 +31,8 @@ export async function inspectTestDesignSource(env:UiBundleEnv,scope:Scope,bundle
   const {source,envelope}=await sourceEnvelope(env,scope,bundleVersionId,expectedManifestHash);
   return {contractVersion:'qagent.ui-page-evidence.v2',source,qualification:{integrity:envelope.qualification.dimensions.integrity.status,counts:envelope.qualification.counts},executionPerformed:false};
 }
-export async function compileTestDesign(env:UiBundleEnv,scope:Scope,bundleVersionId:string,compilerVersion:string,profile?:unknown,runtime:TestDesignRuntime={}):Promise<Compilation>{
-  if(compilerVersion!==COMPILER_VERSION)fail('UI_TEST_DESIGN_COMPILER_UNSUPPORTED',422);
+export async function compileTestDesign(env:UiBundleEnv,scope:Scope,bundleVersionId:string,compilerVersion:string,profile?:unknown,runtime:TestDesignRuntime={}):Promise<Compilation|ObservedPlanCompilation>{
+  if(![COMPILER_VERSION,UI_OBSERVED_COMPILER_VERSION].includes(compilerVersion))fail('UI_TEST_DESIGN_COMPILER_UNSUPPORTED',422);
   validateScope(scope);id(bundleVersionId);
   const startedAt=Date.now(),traceId=requestId(runtime.requestId),controller=new AbortController();
   let stage='source.envelope',finished=false,lastProgressAt=startedAt,lastProgressCount=-1;
@@ -57,8 +59,8 @@ export async function compileTestDesign(env:UiBundleEnv,scope:Scope,bundleVersio
     const operation=(async()=>{
       const {envelope}=await sourceEnvelope(env,scope,bundleVersionId);check();
       const client=new SourceClient(env);
-      stage='artifacts.verify';emit('compile.stage');
-      const result=await compileObservedBundle(envelope,async(artifactId,options)=>{
+      stage=compilerVersion===UI_OBSERVED_COMPILER_VERSION?'plan.references':'artifacts.verify';emit('compile.stage');
+      const result=compilerVersion===UI_OBSERVED_COMPILER_VERSION?await compileObservedPlan(envelope,profile,controller.signal):await compileObservedBundle(envelope,async(artifactId,options)=>{
         check();activeArtifacts.add(artifactId);
         try{return await client.artifact(envelope.source,artifactId,options);}
         finally{activeArtifacts.delete(artifactId);}
@@ -89,6 +91,26 @@ export async function compileTestDesign(env:UiBundleEnv,scope:Scope,bundleVersio
     runtime.signal?.removeEventListener('abort',abort);
     controller.signal.removeEventListener('abort',onAbort);
   }
+}
+
+/** Every evidence page is scoped to the saved recipe and rechecks the source before returning. */
+export async function readTestDesignPlanPage(env:UiBundleEnv,scope:Scope,input:PlanPageRequest,runtime:TestDesignRuntime={}){
+  validateScope(scope);validateUiObservedPlanShape(input.specification);
+  if(!sameScope(scope,input.specification.scope)||!sameScope(scope,input.specification.source.scope))fail('UI_TEST_DESIGN_SCOPE_MISMATCH',403);
+  const controller=new AbortController(),abort=()=>controller.abort(new UiError(499,'UI_TEST_DESIGN_COMPILE_CANCELLED'));
+  const timer=setTimeout(()=>controller.abort(new UiError(504,'UI_TEST_DESIGN_PLAN_READ_TIMEOUT')),TEST_DESIGN_COMPILE_TIMEOUT_MS);
+  if(runtime.signal?.aborted)abort();else runtime.signal?.addEventListener('abort',abort,{once:true});
+  let rejectAbort:(reason:unknown)=>void=()=>{};const interrupted=new Promise<never>((_,reject)=>{rejectAbort=reject;});
+  const onAbort=()=>rejectAbort(controller.signal.reason);controller.signal.addEventListener('abort',onAbort,{once:true});
+  const check=()=>{if(controller.signal.aborted)throw controller.signal.reason;};
+  try{
+    check();const operation=(async()=>{
+      const {envelope,source}=await sourceEnvelope(env,scope,input.specification.source.bundleVersionId,input.specification.source.manifestHash);check();
+      if(source.sourceHash!==input.specification.source.sourceHash||source.captureId!==input.specification.source.captureId)fail('UI_TEST_DESIGN_SOURCE_CHANGED',409);
+      const client=new SourceClient(env),page=await observedPlanPage(envelope,input,env.UI_TEST_DESIGN_SECRET??'',(artifactId,options)=>client.artifact(envelope.source,artifactId,options),controller.signal);
+      check();await client.checkAccess(envelope.source,{signal:controller.signal});check();await new Repository(env.UI_DB).version(scope,source.bundleVersionId);check();return page;
+    })();return await Promise.race([operation,interrupted]);
+  }finally{clearTimeout(timer);runtime.signal?.removeEventListener('abort',abort);controller.signal.removeEventListener('abort',onAbort);}
 }
 interface Cursor {version:1;scope:Scope;captureId:string|null;after:string;ceiling:string;}
 function cursorEncode(v:Cursor):string{return btoa(canonicalJson(v)).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');}
