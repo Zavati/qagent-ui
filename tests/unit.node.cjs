@@ -69,7 +69,7 @@ async function cliModule(){return import(require('node:url').pathToFileURL(path.
 
 test('public prefix health responds without DB, Queue, R2 or operator credentials',async t=>{
  const {f}=await fixture(t);const r=await f.routes.default.fetch(new Request('https://api.example.test/v1/qagent-ui/health'),{});
- assert.equal(r.status,200);assert.deepEqual(await r.json(),{status:'ok',service:'qagent-ui',version:'0.1.10',release:'qagent-page-root-recovery-2.0.26-fix1',builderVersion:p.protocol.ENVIRONMENT_BUILDER_VERSION,capabilities:{pageCaptureSegments:true},stage:'08.2-PC.3'});
+ assert.equal(r.status,200);assert.deepEqual(await r.json(),{status:'ok',service:'qagent-ui',version:'0.2.0',release:'qagent-ui-test-design-td1-0.2.0',builderVersion:p.protocol.ENVIRONMENT_BUILDER_VERSION,capabilities:{pageCaptureSegments:true,deterministicTestDesign:true,pairedExecutionDesigned:true,browserExecution:false},stage:'UI-TD-1'});
 });
 test('public prefix never exposes source capabilities or unknown paths',async t=>{
  const {f}=await fixture(t);

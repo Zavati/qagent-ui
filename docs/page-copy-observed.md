@@ -12,16 +12,24 @@ Não cria tabela, fila ou domínio novo.
 | Captura v1 | `qagent_ui_source_v1` | `qagent_ui_bundle_builder_v2` | Contrato histórico de assembly |
 | PAGE-COPY sintético v2 | `qagent_ui_page_source_v2` | `qagent_ui_bundle_builder_v2` | `qagent.ui-page-evidence.v1` |
 | PAGE-COPY observado sanitizado v2 (r1) | `qagent_ui_page_observed_source_v2` | `qagent_ui_bundle_builder_v3` | `qagent.ui-page-evidence.v2` |
-| PAGE-COPY com dados geridos pelo ambiente v2 (r2) | `qagent_ui_page_environment_source_v2` | `qagent_ui_bundle_builder_v4` | `qagent.ui-page-evidence.v2` |
+| PAGE-COPY com dados geridos pelo ambiente v2 (r2), histórico | `qagent_ui_page_environment_source_v2` | `qagent_ui_bundle_builder_v4` | `qagent.ui-page-evidence.v2` |
+| PAGE-COPY com dados geridos pelo ambiente v2 (r2), revisão atual | `qagent_ui_page_environment_source_v2` | `qagent_ui_bundle_builder_v5` | `qagent.ui-page-evidence.v2` |
 
 O contrato da referência paginada permanece `qagent.ui-bundle-source-ref.v2`. O exporter observado
 é um discriminante explícito e precisa corresponder ao `dataOrigin` da captura. A revisão observada
 de ingresso sanitizado é `08.2-PC.3.r1`, com política `qagent.ui-page-observed.v1` e `FULL_TEST` autorizado.
 O número da versão do pacote não substitui nenhum desses contratos.
 
-`builderVersionForSource` escolhe v3 para o exporter sanitizado e v4 para o exporter do ambiente. O algoritmo de identidade
-e os builders históricos continuam preservados. A entrega não reescreve bundles existentes nem
-reclassifica os dados históricos no banco.
+`builderVersionForSource` escolhe v3 para o exporter sanitizado e v5 para o exporter do ambiente.
+A revisão v5 foi introduzida na recuperação 2.0.26 FIX-1; a identidade inclui a revisão do builder,
+permitindo reprocessar a mesma fonte em um novo build. O leitor mantém a compatibilidade histórica
+prevista pelo protocolo. O algoritmo de identidade e os registros de builds anteriores permanecem
+preservados, sem reescrever bundles existentes ou reclassificar os dados históricos no banco.
+
+Decisão de produto de 21/11/2026: a ampliação da recuperação de cache foi adiada em
+[QAGENT-UI-CACHE-001](ui-cache-deferred.md). A próxima entrega está especificada no
+[plano de Test Design UI](ui-test-design-value-plan.md). A classificação atual de fixtures
+indisponíveis permanece válida; prontidão de cenário será calculada na implementação futura.
 
 ### Perfil r2 gerido pelo ambiente
 

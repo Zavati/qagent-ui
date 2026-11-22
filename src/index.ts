@@ -7,6 +7,8 @@ import { Repository } from './storage/repository';
 import { consumeBuilds,recoverBuilds,requestBuild,readEnvelope } from './services/buildService';
 import { SourceClient } from './services/sourceClient';
 import { PAGE_EXPORTER_VERSION,PAGE_OBSERVED_EXPORTER_VERSION,PAGE_ENVIRONMENT_EXPORTER_VERSION } from './contracts/pageSource';
+import { compileTestDesign,inspectTestDesignSource,listTestDesignSources } from './services/uiTestDesignService';
+import { COMPILER_VERSION,TEST_DESIGN_VERSION,DEFAULT_TEST_DESIGN_PROFILE } from './contracts/uiTestDesign';
 import { SERVICE_NAME,SERVICE_VERSION,RELEASE_ID,RELEASE_CAPABILITIES } from './release';
 
 // Public operator mount; internal Service Binding routes remain unchanged.
@@ -15,15 +17,23 @@ const PUBLIC_PREFIX = '/v1/qagent-ui/';
 
 export async function route(request:Request,env:UiBundleEnv):Promise<Response> {
     const path=new URL(request.url).pathname;
-    if((path==='/health' || path===PUBLIC_PREFIX+'health') && request.method==='GET')return json({status:'ok',service:SERVICE_NAME,version:SERVICE_VERSION,release:RELEASE_ID,builderVersion:ENVIRONMENT_BUILDER_VERSION,capabilities:RELEASE_CAPABILITIES,stage:'08.2-PC.3'});
+    if((path==='/health' || path===PUBLIC_PREFIX+'health') && request.method==='GET')return json({status:'ok',service:SERVICE_NAME,version:SERVICE_VERSION,release:RELEASE_ID,builderVersion:ENVIRONMENT_BUILDER_VERSION,capabilities:RELEASE_CAPABILITIES,stage:'UI-TD-1'});
     const isPublic=path.startsWith(PUBLIC_PREFIX);
     if(!isPublic && !path.startsWith(UI_PREFIX))return json({status:'error',code:'UI_BUNDLE_ROUTE_NOT_FOUND'},404);
     const op=path.slice((isPublic?PUBLIC_PREFIX:UI_PREFIX).length),repo=new Repository(env.UI_DB);
+    if(op.startsWith('test-design/') && !isPublic) {
+        if(!['test-design/compile','test-design/sources','test-design/source'].includes(op))return json({status:'error',code:'UI_BUNDLE_ROUTE_NOT_FOUND'},404);
+        const input=await authenticate(request,env.UI_TEST_DESIGN_SECRET,'test-design');
+        if(op==='test-design/compile') {const v=object(input,['scope','bundleVersionId','compilerVersion'],['profile']);return json(await compileTestDesign(env,validateScope(v.scope),v.bundleVersionId,v.compilerVersion,v.profile));}
+        if(op==='test-design/source') {const v=object(input,['scope','bundleVersionId'],['expectedManifestHash']);return json(await inspectTestDesignSource(env,validateScope(v.scope),v.bundleVersionId,v.expectedManifestHash));}
+        const v=object(input,['scope'],['captureId','cursor','limit']);return json(await listTestDesignSources(env,validateScope(v.scope),v.captureId??null,v.cursor,v.limit??20));
+    }
     if(op==='capabilities' && !isPublic) {
         await authenticate(request,env.UI_BUNDLE_SOURCE_SECRET,'source');await repo.ready();await env.UI_BUNDLES.head('_qagent_ui_bundle/readiness');
         return json({status:'ok',sourceVersion:SOURCE_VERSION,buildRequestVersion:BUILD_REQUEST_VERSION,assemblyVersion:ASSEMBLY_VERSION,builderVersion:BUILDER_VERSION,
             supportedSourceExporters:[EXPORTER_VERSION,PAGE_EXPORTER_VERSION,PAGE_OBSERVED_EXPORTER_VERSION,PAGE_ENVIRONMENT_EXPORTER_VERSION],
             supportedBuilderVersions:[BUILDER_VERSION,OBSERVED_BUILDER_VERSION,ENVIRONMENT_BUILDER_VERSION],observedEvidenceVersion:'qagent.ui-page-evidence.v2',
+            testDesign:{supported:true,contractVersion:TEST_DESIGN_VERSION,compilerVersion:COMPILER_VERSION,defaultProfile:DEFAULT_TEST_DESIGN_PROFILE,authenticationConfigured:!!env.UI_TEST_DESIGN_SECRET,executionSupported:false},
             ready:env.UI_BUNDLE_BUILD_ENABLED!=='false'&&!!env.OBSERVATION_SERVICE&&!!env.UI_BUNDLE_BUILD_QUEUE,executionSupported:false});
     }
     if(!['build','list','read','artifact','inspect','revoke','build-status'].includes(op))return json({status:'error',code:'UI_BUNDLE_ROUTE_NOT_FOUND'},404);

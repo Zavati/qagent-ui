@@ -179,6 +179,9 @@ export async function observedPageIndex(input: ObservedPageInput): Promise<Recor
     const occurrence = occurrences.get(occurrenceKey) ?? 0;
     if (p.classification === 'BUSINESS_API') occurrences.set(occurrenceKey, occurrence + 1);
     const reasons: string[] = [];
+    // TODO(QAGENT-UI-CACHE-001): cache incompleto permanece indisponível; ver docs/ui-cache-deferred.md.
+    // O futuro Test Design deve avaliar dependências por cenário, sem um bloqueio global por cache.
+    // Não promover 304 sem representação comprovada a fixture 200/EMPTY nem usar fallback real.
     if (!['COMPLETE', 'EMPTY'].includes(p.response.bodyState)) reasons.push('UI_FIXTURE_RESPONSE_' + p.response.bodyState);
     if (p.response.replayStatus === null) reasons.push('UI_FIXTURE_STATUS_UNAVAILABLE');
     if (p.response.networkStatus === 304 && !source) reasons.push('UI_CACHE_BODY_UNAVAILABLE');
