@@ -1,4 +1,4 @@
-# qagent-ui 0.2.0
+# qagent-ui 0.4.0
 
 Domínio UI do QAgent: montagem, qualificação e persistência de bundles e compilação determinística de Test Designs.
 Não executa navegador e não aprova testes UI.
@@ -6,6 +6,21 @@ Não executa navegador e não aprova testes UI.
 Observation continua dono dos dados de origem. Este serviço recebe referências pela fila,
 consulta a fonte pelo Service Binding e guarda manifestos derivados no D1/R2 próprios.
 Usuário/Plugin não precisa disparar uma montagem manual.
+
+## UI-EXEC-1 — evidência para o executor
+
+A versão 0.4.0 acrescenta um adapter interno que entrega o manifesto e os artefatos
+completos para execuções admitidas pelo Gateway. O adapter valida escopo, versão,
+hashes, autorização e revogação antes de liberar a evidência. A execução Chromium
+fica no projeto separado `qagent-ui-runner`; os lotes, resultados e acesso do Console
+ficam no Gateway. Os planos v2 já salvos continuam utilizáveis sem nova geração.
+
+Configure `UI_EXECUTION_SECRET` com o mesmo valor no Gateway e neste serviço.
+Mantenha as configurações anteriores de Test Design, Observation, filas e buckets.
+Esta atualização não adiciona migração D1 ao qagent-ui.
+Veja [contrato e implantação do adapter](docs/ui-execution-evidence.md).
+
+As seções abaixo registram as etapas de construção da evidência e do Test Design.
 
 ## PAGE-COPY PC.2
 
@@ -18,7 +33,7 @@ O consumidor aceita a origem observada v2 emitida por Observation, verifica nova
 produz o recibo `qagent.ui-page-evidence.v2`: índice de documentos/estados/recursos e referências
 determinísticas de fixtures de negócio. A qualificação separa integridade, disponibilidade para
 mocks, referência estrutural/visual e limitações de execução. Ver [contrato e usos](docs/page-copy-observed.md).
-O conteúdo capturado não é executado. Não há Runner, teste aprovado nem asserção de negócio gerada.
+O conteúdo capturado não é executado neste serviço. Montar o bundle não executa nem aprova testes.
 
 O perfil r2 `ENVIRONMENT_MANAGED` usa exporter próprio e builder v5, preserva dados de teste sem
 redação/máscara e registra essa responsabilidade na qualificação. Gateway admite esse perfil
@@ -60,8 +75,8 @@ A recuperação dos sete casos HTTP 304 sem corpo foi adiada e está registrada 
 um replay que dependa dessa fixture fica bloqueado, sem fallback de negócio para a rede.
 O modo live tem admissão independente; o resultado do par explicita comparação incompleta.
 Este serviço implementa o compilador e as rotas internas UI-TD-1. A publicação no Registry e
-a operação em lote são integrações UI-TD-2 nos serviços compartilhados. Browser Runner e
-execução permanecem futuros; todos os resultados deste serviço têm executionPerformed=false.
+a operação em lote são integrações UI-TD-2 nos serviços compartilhados. O Browser Runner
+UI-EXEC-1 é separado; a compilação continua com executionPerformed=false.
 Ver [contrato, configuração e testes UI-TD-1](docs/ui-test-design-td1.md).
 Manifestos observados existentes não são regravados pelo compilador.
 
@@ -73,6 +88,7 @@ npm test
 npm run test:pc2
 npm run test:pc3
 npm run test:td1
+npm run test:exec1
 npm run check
 npm run test:integration -- --observation ../qagent-observation
 npm run test:pc2 -- --observation ../qagent-observation

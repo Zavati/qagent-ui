@@ -97,7 +97,7 @@ test('both health routes identify the release, package version and active enviro
   const pkg = JSON.parse(fs.readFileSync(path.join(process.env.QAGENT_UI_ROOT, 'package.json'), 'utf8'));
   assert.equal(release.SERVICE_NAME, 'qagent-ui');
   assert.equal(release.SERVICE_VERSION, pkg.version);
-  assert.equal(release.RELEASE_ID, 'qagent-ui-observed-plan-td3-0.3.0');
+  assert.equal(release.RELEASE_ID, 'qagent-ui-execution-evidence-ui-exec1-0.4.0');
   for (const pathname of ['/health', '/v1/qagent-ui/health']) {
     const response = await route(new Request('https://ui.test' + pathname), {});
     assert.equal(response.status, 200);

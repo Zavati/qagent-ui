@@ -11,6 +11,7 @@ import { compileTestDesign,inspectTestDesignSource,listTestDesignSources,readTes
 import { COMPILER_VERSION,TEST_DESIGN_VERSION,DEFAULT_TEST_DESIGN_PROFILE } from './contracts/uiTestDesign';
 import { UI_OBSERVED_COMPILER_VERSION,UI_OBSERVED_SPECIFICATION_VERSION,UI_OBSERVED_DEFAULT_PROFILE } from './contracts/uiObservedPlan';
 import { SERVICE_NAME,SERVICE_VERSION,RELEASE_ID,RELEASE_CAPABILITIES } from './release';
+import { EXECUTION_SOURCE_VERSION, readExecutionSource, readExecutionArtifact } from './services/uiExecutionEvidence';
 
 // Public operator mount; internal Service Binding routes remain unchanged.
 // Authenticate the ORIGINAL request URL so the signature binds the actual wire path.
@@ -24,10 +25,19 @@ function incomingSignal(request:Request):AbortSignal|undefined {
 
 export async function route(request:Request,env:UiBundleEnv):Promise<Response> {
     const path=new URL(request.url).pathname;
-    if((path==='/health' || path===PUBLIC_PREFIX+'health') && request.method==='GET')return json({status:'ok',service:SERVICE_NAME,version:SERVICE_VERSION,release:RELEASE_ID,builderVersion:ENVIRONMENT_BUILDER_VERSION,capabilities:RELEASE_CAPABILITIES,stage:'UI-TD-3'});
+    if((path==='/health' || path===PUBLIC_PREFIX+'health') && request.method==='GET')return json({status:'ok',service:SERVICE_NAME,version:SERVICE_VERSION,release:RELEASE_ID,builderVersion:ENVIRONMENT_BUILDER_VERSION,capabilities:RELEASE_CAPABILITIES,stage:'UI-EXEC-1'});
     const isPublic=path.startsWith(PUBLIC_PREFIX);
     if(!isPublic && !path.startsWith(UI_PREFIX))return json({status:'error',code:'UI_BUNDLE_ROUTE_NOT_FOUND'},404);
     const op=path.slice((isPublic?PUBLIC_PREFIX:UI_PREFIX).length),repo=new Repository(env.UI_DB);
+    if(op.startsWith('execution/') && !isPublic) {
+        if(!['execution/source','execution/artifact'].includes(op))return json({status:'error',code:'UI_BUNDLE_ROUTE_NOT_FOUND'},404);
+        if(!env.UI_EXECUTION_SECRET)fail('UI_EXECUTION_NOT_CONFIGURED',503);
+        const input=await authenticate(request,env.UI_EXECUTION_SECRET,'execution');
+        if(op==='execution/source')return json(await readExecutionSource(env,input,incomingSignal(request)));
+        const {bytes,ref}=await readExecutionArtifact(env,input,incomingSignal(request));
+        return new Response(bytes.slice().buffer,{headers:{'Content-Type':ref.contentType,'Content-Length':String(bytes.length),'X-QAgent-SHA256':ref.sha256,
+            'Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Content-Security-Policy':"sandbox; default-src 'none'"}});
+    }
     if(op.startsWith('test-design/') && !isPublic) {
         if(!['test-design/compile','test-design/sources','test-design/source','test-design/plan-page'].includes(op))return json({status:'error',code:'UI_BUNDLE_ROUTE_NOT_FOUND'},404);
         const input=await authenticate(request,env.UI_TEST_DESIGN_SECRET,'test-design');
@@ -42,6 +52,7 @@ export async function route(request:Request,env:UiBundleEnv):Promise<Response> {
             supportedSourceExporters:[EXPORTER_VERSION,PAGE_EXPORTER_VERSION,PAGE_OBSERVED_EXPORTER_VERSION,PAGE_ENVIRONMENT_EXPORTER_VERSION],
             supportedBuilderVersions:[BUILDER_VERSION,OBSERVED_BUILDER_VERSION,ENVIRONMENT_BUILDER_VERSION],observedEvidenceVersion:'qagent.ui-page-evidence.v2',
             testDesign:{supported:true,contractVersion:UI_OBSERVED_SPECIFICATION_VERSION,compilerVersion:UI_OBSERVED_COMPILER_VERSION,defaultProfile:UI_OBSERVED_DEFAULT_PROFILE,supportedCompilerVersions:[COMPILER_VERSION,UI_OBSERVED_COMPILER_VERSION],supportedContractVersions:[TEST_DESIGN_VERSION,UI_OBSERVED_SPECIFICATION_VERSION],legacyDefaultProfile:DEFAULT_TEST_DESIGN_PROFILE,evidencePagination:true,authenticationConfigured:!!env.UI_TEST_DESIGN_SECRET,executionSupported:false},
+            executionEvidence:{supported:true,contractVersion:EXECUTION_SOURCE_VERSION,authenticationConfigured:!!env.UI_EXECUTION_SECRET},
             ready:env.UI_BUNDLE_BUILD_ENABLED!=='false'&&!!env.OBSERVATION_SERVICE&&!!env.UI_BUNDLE_BUILD_QUEUE,executionSupported:false});
     }
     if(!['build','list','read','artifact','inspect','revoke','build-status'].includes(op))return json({status:'error',code:'UI_BUNDLE_ROUTE_NOT_FOUND'},404);

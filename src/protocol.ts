@@ -145,14 +145,14 @@ export async function validateMessage(value:unknown,secret:string|undefined):Pro
     await verify(secret,'QAGENT_UI_BUNDLE_QUEUE_V1\n'+canonicalJson(unsigned),signature);
     return m as BuildMessage;
 }
-export async function signedRequest(url:string,body:unknown,secret:string|undefined,principal:'source'|'operator'|'test-design',now=Date.now()):Promise<Request> {
+export async function signedRequest(url:string,body:unknown,secret:string|undefined,principal:'source'|'operator'|'test-design'|'execution',now=Date.now()):Promise<Request> {
     const bytes=new TextEncoder().encode(canonicalJson(body));
     if(bytes.length>INTERNAL_MAX_BYTES) fail('UI_BUNDLE_CONTROL_TOO_LARGE',413);
     const time=String(Math.floor(now/1000)),path=new URL(url).pathname;
     const signature=await sign(secret,`QAGENT_UI_BUNDLE_HTTP_V1\n${principal}\nPOST\n${path}\n${time}\n${await sha256(bytes)}`);
     return new Request(url,{method:'POST',headers:{'Content-Type':'application/json','X-QAgent-Bundle-Principal':principal,'X-QAgent-Bundle-Time':time,'X-QAgent-Bundle-Signature':signature},body:bytes.slice().buffer,redirect:'manual'});
 }
-export async function authenticate(request:Request,secret:string|undefined,principal:'source'|'operator'|'test-design',now=Date.now()):Promise<unknown> {
+export async function authenticate(request:Request,secret:string|undefined,principal:'source'|'operator'|'test-design'|'execution',now=Date.now()):Promise<unknown> {
     if(request.method!=='POST' || new URL(request.url).search || request.headers.get('X-QAgent-Bundle-Principal')!==principal) fail('UI_BUNDLE_AUTH_INVALID',401);
     const time=request.headers.get('X-QAgent-Bundle-Time')??'';
     if(!/^\d{10,12}$/.test(time) || Math.abs(now/1000-Number(time))>60) fail('UI_BUNDLE_AUTH_EXPIRED',401);
@@ -173,7 +173,7 @@ export async function limitedResponse(response:Response,max:number):Promise<Uint
     finally {reader.releaseLock();}
     const out=new Uint8Array(size);let offset=0;for(const p of parts){out.set(p,offset);offset+=p.length;}return out;
 }
-export async function internalFetch(binding:Fetcher|undefined,path:string,body:unknown,secret:string|undefined,principal:'source'|'operator'|'test-design'='source'):Promise<Response> {
+export async function internalFetch(binding:Fetcher|undefined,path:string,body:unknown,secret:string|undefined,principal:'source'|'operator'|'test-design'|'execution'='source'):Promise<Response> {
     if(!binding) fail('UI_BUNDLE_SOURCE_UNAVAILABLE',503);
     const req=await signedRequest('https://qagent.internal'+path,body,secret,principal);
     const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),15000);

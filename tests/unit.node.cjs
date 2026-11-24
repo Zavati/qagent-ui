@@ -69,7 +69,7 @@ async function cliModule(){return import(require('node:url').pathToFileURL(path.
 
 test('public prefix health responds without DB, Queue, R2 or operator credentials',async t=>{
  const {f}=await fixture(t);const r=await f.routes.default.fetch(new Request('https://api.example.test/v1/qagent-ui/health'),{});
- assert.equal(r.status,200);assert.deepEqual(await r.json(),{status:'ok',service:'qagent-ui',version:'0.3.0',release:'qagent-ui-observed-plan-td3-0.3.0',builderVersion:p.protocol.ENVIRONMENT_BUILDER_VERSION,capabilities:{pageCaptureSegments:true,deterministicTestDesign:true,pairedExecutionDesigned:true,observedReferencePlan:true,evidencePagination:true,browserExecution:false},stage:'UI-TD-3'});
+ assert.equal(r.status,200);assert.deepEqual(await r.json(),{status:'ok',service:'qagent-ui',version:'0.4.0',release:'qagent-ui-execution-evidence-ui-exec1-0.4.0',builderVersion:p.protocol.ENVIRONMENT_BUILDER_VERSION,capabilities:{pageCaptureSegments:true,deterministicTestDesign:true,pairedExecutionDesigned:true,observedReferencePlan:true,evidencePagination:true,executionEvidence:true,browserExecution:false},stage:'UI-EXEC-1'});
 });
 test('public prefix never exposes source capabilities or unknown paths',async t=>{
  const {f}=await fixture(t);
